@@ -1,0 +1,6 @@
+duckdb>=1.1.0
+pandas>=2.0
+matplotlib>=3.7
+nbformat>=5.9
+jupyter>=1.0
+ipykernel>=6.0
