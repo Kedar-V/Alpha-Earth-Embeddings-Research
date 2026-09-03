@@ -1,0 +1,19 @@
+{
+  "folders": [
+    {
+      "name": "Alpha-Earth-Embeddings-Research",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/.ipynb_checkpoints": true,
+      "**/__pycache__": true
+    },
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "jupyter.notebookFileRoot": "${workspaceFolder}",
+    "files.associations": {
+      "*.ipynb": "jupyter-notebook"
+    }
+  }
+}
