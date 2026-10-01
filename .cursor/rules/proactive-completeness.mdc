@@ -1,0 +1,43 @@
+---
+description: Proactively complete the obvious next artifacts when doing ML/data/training work
+alwaysApply: true
+---
+
+# Think ahead — don't wait to be told
+
+When the user asks for a task, also do the **adjacent deliverables** a careful researcher would want next, without asking first (unless expensive/destructive).
+
+## Before finishing any training / model / dataset job
+
+Ask yourself: "If they come back in an hour, what will they wish I had saved?"
+
+Default checklist (do all that apply):
+
+- **Checkpoints** — `torch.save` / equivalent per fold or best epoch (`state_dict`, arch, hyperparams, held-out split id)
+- **Intermediate features** — pooled / encoder embeddings the head sits on (OOF when using LORO), not just logits
+- **Predictions + metrics** — OOF preds, per-fold and mean scores, comparison vs baseline
+- **Plots** — write PNGs under `outputs/` and embed as markdown in the notebook so they can view without rerun
+- **Manifest** — short JSON: paths, dims, seed, epochs, device, how to reload
+- **Concurrency** — use available GPUs/CPUs when folds/tiles are independent (see parallel-concurrency rule)
+- **Progress** — `tqdm` + unbuffered logs on long jobs
+
+## Anti-patterns
+
+```text
+❌ Train a model → only print F1 → discard weights
+❌ Build variable-size inputs for a CNN → never cache fixed-size encoder vectors
+❌ Generate plots in a script run → leave notebook empty so user must retrain to see them
+❌ Single-GPU loop when 8 idle GPUs and independent folds exist
+```
+
+```text
+✅ Train → save checkpoints + OOF embeddings + metrics CSV + plots + snapshot.json
+✅ After "train CNN" assume UMAP/EDA on the pooled layer may be next → cache it
+✅ Notebook shows results from outputs/ via markdown images without re-execution
+```
+
+## Scope judgment
+
+- Do proactive extras when cheap relative to the main job (saving a `.pt` during training is mandatory).
+- If an extra would **double+ wall time** or spend money, do the cheap saves now and note the optional heavier follow-up in one line.
+- Prefer one complete pipeline over a minimal answer that forces a redo.

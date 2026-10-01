@@ -70,12 +70,14 @@ Buildings schema: [`subtype`](https://docs.overturemaps.org/schema/reference/bui
 
 ### Clarity of residential vs non-residential
 
-When `subtype` is present:
+**Locked definition:** [`docs/residential_definition_v1.md`](residential_definition_v1.md) (`resi_def_v1`).
 
-- **`residential`** → residential  
-- any other non-null subtype (`commercial`, `industrial`, `education`, `medical`, …) → non-residential  
+- **Building GT:** high-precision Overture `class` → study labels; `y_res = 1` iff SF/MF. Ambiguous tags (`residential`, `terrace`, unlabeled) excluded — never negatives.
+- **10 m cells:** area-weighted residential fraction \(f_{\mathrm{res}}\) with τ=0.7 and an explicit **mixed** band (not majority class).
+- **Weak labels** (subtype-only, Places, OBAT): separate tracks; not pooled into GT F1.
 
-That split is **schema-clean and effective** for a first classifier. Fine grain (single-family vs multi-family, school vs hospital) needs high-precision `class` tags (`house` / `apartments` / `school` / …). Ambiguous tags (`residential` as class, `terrace`, bare `building=yes`) should be excluded from gold multi-class GT.
+Historical note (pre-lock): when only `subtype` is present, `residential` vs other non-null subtypes is schema-clean for a *weak* track, but **`resi_def_v1` GT does not use subtype alone.**
+
 
 ### Completeness (live extracts from public Overture GeoParquet)
 

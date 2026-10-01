@@ -1,0 +1,62 @@
+seed: 42
+
+# ProcessPool workers for AOI-parallel building/pixel eval.
+# 0 or null = use all CPU cores (capped by number of AOIs).
+workers: 0
+
+paths:
+  gt_buildings: data/validation/gt_buildings.parquet
+  model_predictions: data/predictions/model_predictions.parquet
+  training_buildings: null  # optional; if set, spatial-independence check runs
+  ghsl_tiles_dir: data/ghsl/tiles
+  ghsl_vrt: data/ghsl/GHS_BUILT_C_FUN_2018.vrt
+  output_dir: outputs/validation
+
+labels:
+  residential: RES
+  non_residential: NRES
+  exclude:
+    - MIXED
+    - UNKNOWN
+
+ghsl:
+  # GHS-BUILT-C FUN R2023A (10 m, ESRI:54009). Values are already RES/NRES.
+  residential_value: 1
+  non_residential_value: 2
+  nonbuilt_value: 0
+  nodata_value: 255
+  crs: ESRI:54009
+  tile_url_template: >-
+    https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_BUILT_C_GLOBE_R2023A/GHS_BUILT_C_FUN_E2018_GLOBE_R2023A_54009_10/V1-0/tiles/GHS_BUILT_C_FUN_E2018_GLOBE_R2023A_54009_10_V1_0_R{row}_C{col}.zip
+  # Mollweide 1000 km tiling scheme (GHSL R2023A)
+  tile_x0: -18041000.0
+  tile_ymax: 9000000.0
+  tile_size_m: 1000000.0
+
+pixel_validation:
+  enabled: true
+  minimum_building_fraction: 0.5
+  ambiguous_tie_eps: 0.05
+
+building_validation:
+  enabled: true
+  aggregation: area_weighted_majority
+
+spatial_independence:
+  enabled: true
+  buffer_km: 10.0
+  refuse_held_out_label_on_leakage: true
+
+bootstrap:
+  iterations: 500
+  cluster: aoi_id
+  confidence_level: 0.95
+
+# Plot / report focus: macro-F1 headline + RES-positive class metrics.
+metrics:
+  - accuracy
+  - macro_f1
+  - precision
+  - recall
+  - residential_f1
+  - residential_iou

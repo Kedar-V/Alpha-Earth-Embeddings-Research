@@ -1,0 +1,66 @@
+---
+description: Parallelize across CPU cores and NVIDIA GPUs; maximize concurrency for scripts and training
+alwaysApply: true
+---
+
+# Maximize Parallelism & Concurrency
+
+When creating or running any scripts **or training jobs**, default to using all available CPU cores and all available NVIDIA GPUs unless the user says otherwise or the work is inherently serial.
+
+This machine has a multi-GPU NVIDIA cluster (`torch.cuda.device_count()` / `nvidia-smi`). Training must use it.
+
+## CPU / I/O defaults
+
+- Prefer process-level parallelism for CPU-bound work (`multiprocessing`, `ProcessPoolExecutor`, `joblib`, Ray).
+- Prefer thread/async concurrency for I/O-bound work (`ThreadPoolExecutor`, `asyncio`, concurrent downloads/API calls).
+- Cap CPU workers at `os.cpu_count()` for CPU-bound jobs; for I/O-bound jobs, use higher concurrency when safe (e.g. 2–4× cores) without hammering rate-limited services.
+- Vectorize with NumPy/pandas/polars before Python loops; when looping remains necessary, parallelize it.
+- For shell pipelines and batch jobs, use GNU `parallel`, `xargs -P`, or equivalent.
+- Set explicit worker/thread counts rather than leaving library defaults (often 1).
+
+## GPU / training defaults (required)
+
+- Detect GPUs with `torch.cuda.device_count()` (or `nvidia-smi`) and use **all visible GPUs** for training, evaluation sweeps, and independent folds/runs.
+- Prefer one of:
+  - **Independent jobs per GPU** (hyperparam sweeps, CV folds, regions): `ProcessPoolExecutor` / spawn one process per GPU with `cuda:{i}` (matches this repo’s fold-parallel pattern).
+  - **Single-job multi-GPU**: `DistributedDataParallel` + `torchrun --nproc_per_node=$(nvidia-smi -L | wc -l)`, or `DataParallel` only for quick prototypes.
+- Size `DataLoader` `num_workers` aggressively (often near `os.cpu_count() // n_gpus`, `pin_memory=True`, `non_blocking=True` transfers).
+- Never hardcode `cuda:0` / a single GPU when multiple GPUs are available and work can be sharded.
+- Before long training, print GPU count and device names so under-utilization is obvious.
+
+## Examples
+
+```python
+# ❌ BAD — serial over independent chunks / single GPU
+for path in files:
+    process(path)
+model.to("cuda:0")
+
+# ✅ GOOD — all CPU cores
+from concurrent.futures import ProcessPoolExecutor
+import os
+with ProcessPoolExecutor(max_workers=os.cpu_count()) as pool:
+    list(pool.map(process, files))
+
+# ✅ GOOD — all GPUs for independent training jobs
+import torch
+n_gpus = torch.cuda.device_count()
+# assign job i -> cuda:(i % n_gpus); run up to n_gpus jobs concurrently
+```
+
+```bash
+# ❌ BAD
+for f in *.parquet; do python transform.py "$f"; done
+python train.py  # implicit single GPU
+
+# ✅ GOOD
+ls *.parquet | parallel -j "$(nproc)" python transform.py {}
+torchrun --nproc_per_node="$(nvidia-smi -L | wc -l)" train.py
+```
+
+## Exceptions
+
+- Respect API rate limits and shared resource locks; lower concurrency only when required.
+- Avoid nested process pools / nested multi-GPU wrappers that oversubscribe CPUs or GPUs.
+- Keep single-GPU or single-threaded paths only when debugging, OOM, or the user explicitly requests it.
+- If GPUs are occupied, use remaining free devices—do not idle waiting on one GPU while others are free.

@@ -32,8 +32,9 @@ con.execute("SET s3_secret_access_key='';")
 print("DuckDB ready ·", RELEASE)
 
 
-def sample_region(name: str, bbox: tuple[float, float, float, float], n_per_class: int) -> pd.DataFrame:
+def sample_region(name: str, bbox: tuple[float, float, float, float], max_n: int | None = None) -> pd.DataFrame:
     xmin, ymin, xmax, ymax = bbox
+    limit_clause = f"WHERE rn <= {int(max_n)}" if max_n is not None else ""
     sql = f"""
     WITH b AS (
       SELECT
@@ -56,12 +57,9 @@ def sample_region(name: str, bbox: tuple[float, float, float, float], n_per_clas
       WHERE lon BETWEEN {xmin} AND {xmax}
         AND lat BETWEEN {ymin} AND {ymax}
     ),
-    sampled AS (
-      SELECT * FROM (
-        SELECT *, row_number() OVER (PARTITION BY y ORDER BY hash(id)) AS rn
-        FROM labeled
-      ) t
-      WHERE rn <= {n_per_class}
+    ranked AS (
+      SELECT *, row_number() OVER (ORDER BY hash(id)) AS rn
+      FROM labeled
     )
     SELECT
       id,
@@ -71,7 +69,8 @@ def sample_region(name: str, bbox: tuple[float, float, float, float], n_per_clas
       lon,
       lat,
       y
-    FROM sampled
+    FROM ranked
+    {limit_clause}
     """
     return con.execute(sql).df()
 
@@ -83,8 +82,8 @@ if cache_labels.exists():
 else:
     frames = []
     for name, bbox in US_REGIONS.items():
-        print(f"Sampling · {name} ...", flush=True)
-        frames.append(sample_region(name, bbox, N_PER_CLASS))
+        print(f"Sampling · {name} (unstratified) ...", flush=True)
+        frames.append(sample_region(name, bbox, MAX_PER_REGION))
     labels = pd.concat(frames, ignore_index=True)
     labels.to_parquet(cache_labels, index=False)
     print("Wrote", cache_labels)
@@ -221,7 +220,8 @@ CACHE = OUT_DIR / "building_embeddings.parquet"
 RELEASE = "2026-08-19.0"
 BUILDINGS = f"s3://overturemaps-us-west-2/release/{RELEASE}/theme=buildings/type=building/*"
 EMBED_YEAR = 2024
-N_PER_CLASS = 200          # labeled samples per class per region (trial scale)
+N_PER_CLASS = None  # unused — sampling is unstratified
+MAX_PER_REGION = None  # None = all subtype-labeled buildings in AOI (natural RES mix)
 EE_BATCH = 400             # reduceRegions batch size
 RANDOM_STATE = 42
 
@@ -288,7 +288,7 @@ Binary target from `subtype`:
 - `1` = `residential`
 - `0` = any other non-null subtype (commercial, industrial, education, …)
 
-Stratified sample of `N_PER_CLASS` per side per region (or all available if fewer).
+Unstratified sample of all subtype-labeled buildings per region (natural RES majority). Cap with `MAX_PER_REGION` if needed — never balance RES/NRES at polygon level.
 """
         ),
         code(SAMPLE_LABELS),
@@ -544,7 +544,8 @@ snapshot = {
     "overture_release": RELEASE,
     "embedding_year": EMBED_YEAR,
     "n_buildings": int(len(data)),
-    "n_per_class_target": N_PER_CLASS,
+    "sampling": "unstratified subtype labels (natural RES mix); optional MAX_PER_REGION random cap",
+    "n_per_class_target": None,
     "regions": list(US_REGIONS.keys()),
     "pooled_holdout": pooled,
     "loro_macro_f1_mean": float(loro["f1_macro"].mean()),

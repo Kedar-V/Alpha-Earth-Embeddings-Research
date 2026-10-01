@@ -1,0 +1,77 @@
+{
+  "label_definition": "resi_def_v1",
+  "date": "2026-09-14",
+  "doc": "docs/residential_definition_v1.md",
+  "source_ask": "Kyle Meeting 1 (2026-09-08) P0 #1",
+  "cell_10m": {
+    "soft_label": "f_res = area-weighted mean of y_res over GT buildings intersecting the AE pixel",
+    "weight": "intersection_area_m2",
+    "fallback_weight": "centroid_in_cell then footprint_area",
+    "tau": 0.7,
+    "hard_label": {
+      "residential": "f_res >= 0.7",
+      "non_residential": "f_res <= 0.3",
+      "mixed": "0.3 < f_res < 0.7 \u2014 exclude from binary cell metrics; report rate",
+      "undefined": "no GT buildings in cell \u2014 exclude"
+    },
+    "tau_sensitivity": [
+      0.6,
+      0.7,
+      0.8
+    ]
+  },
+  "dou_note": "GHSL DoU stratifies location only; does not define y_res or f_res",
+  "building_gt": {
+    "source_field": "overture_buildings.class",
+    "y_res_rule": "1 iff study label in {single_family, multi_family}",
+    "class_to_label": {
+      "house": "single_family",
+      "detached": "single_family",
+      "bungalow": "single_family",
+      "semi": "single_family",
+      "semidetached_house": "single_family",
+      "apartments": "multi_family",
+      "dormitory": "multi_family",
+      "school": "education",
+      "kindergarten": "education",
+      "college": "education",
+      "university": "education",
+      "hospital": "medical",
+      "clinic": "medical",
+      "retail": "retail",
+      "commercial": "retail",
+      "supermarket": "retail",
+      "office": "office",
+      "hotel": "hotel",
+      "industrial": "industrial",
+      "warehouse": "industrial",
+      "manufacture": "industrial",
+      "church": "religious",
+      "cathedral": "religious",
+      "mosque": "religious",
+      "temple": "religious",
+      "synagogue": "religious",
+      "civic": "civic",
+      "government": "civic",
+      "public": "civic",
+      "fire_station": "civic",
+      "police": "civic"
+    },
+    "residential_labels": [
+      "single_family",
+      "multi_family"
+    ],
+    "excluded_examples": [
+      "residential",
+      "terrace",
+      null
+    ],
+    "unlabeled_policy": "exclude \u2014 never treat as non-residential negatives"
+  },
+  "weak_tracks_not_gt": [
+    "subtype_residential_without_gt_class",
+    "places",
+    "ghs_obat",
+    "cadastral_zoning"
+  ]
+}

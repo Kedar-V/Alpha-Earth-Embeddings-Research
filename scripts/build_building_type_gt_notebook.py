@@ -36,8 +36,9 @@ _case_parts = "\n".join(
 )
 
 
-def sample_region(name: str, bbox: tuple[float, float, float, float], n_per_class: int) -> pd.DataFrame:
+def sample_region(name: str, bbox: tuple[float, float, float, float], max_n: int | None = None) -> pd.DataFrame:
     xmin, ymin, xmax, ymax = bbox
+    limit_clause = f"WHERE rn <= {int(max_n)}" if max_n is not None else ""
     sql = f"""
     WITH b AS (
       SELECT
@@ -66,12 +67,9 @@ def sample_region(name: str, bbox: tuple[float, float, float, float], n_per_clas
     mapped AS (
       SELECT * FROM labeled WHERE label IS NOT NULL
     ),
-    sampled AS (
-      SELECT * FROM (
-        SELECT *, row_number() OVER (PARTITION BY label ORDER BY hash(id)) AS rn
-        FROM mapped
-      ) t
-      WHERE rn <= {n_per_class}
+    ranked AS (
+      SELECT *, row_number() OVER (ORDER BY hash(id)) AS rn
+      FROM mapped
     )
     SELECT
       id,
@@ -83,7 +81,8 @@ def sample_region(name: str, bbox: tuple[float, float, float, float], n_per_clas
       lat,
       {EMBED_YEAR} AS embed_year,
       '{SAMPLE_METHOD}' AS sample_method
-    FROM sampled
+    FROM ranked
+    {limit_clause}
     """
     return con.execute(sql).df()
 
@@ -95,8 +94,8 @@ if cache_labels.exists():
 else:
     frames = []
     for name, bbox in US_REGIONS.items():
-        print(f"Sampling · {name} ...", flush=True)
-        frames.append(sample_region(name, bbox, N_PER_CLASS))
+        print(f"Sampling · {name} (unstratified) ...", flush=True)
+        frames.append(sample_region(name, bbox, MAX_PER_REGION))
     labels = pd.concat(frames, ignore_index=True)
     labels["id"] = labels["id"].astype(str)
     labels.to_parquet(cache_labels, index=False)
@@ -575,7 +574,8 @@ snapshot = {
     "n_labels": int(len(labels)),
     "n_embeddings": int(len(embeddings)),
     "n_gt": int(len(gt)),
-    "n_per_class_target": N_PER_CLASS,
+    "sampling": "unstratified Track-A (natural RES mix); optional MAX_PER_REGION random cap",
+    "n_per_class_target": None,
     "regions": list(US_REGIONS.keys()),
     "rollup": ROLLUP,
     "label_counts": gt["label"].value_counts().to_dict(),
@@ -677,7 +677,8 @@ RELEASE = "2026-08-19.0"
 BUILDINGS = f"s3://overturemaps-us-west-2/release/{RELEASE}/theme=buildings/type=building/*"
 EMBED_YEAR = 2024
 SAMPLE_METHOD = "centroid_first"
-N_PER_CLASS = 100  # target samples per study label per region (take all if fewer)
+N_PER_CLASS = None  # legacy name; unused — sample is unstratified (all typed / MAX_PER_REGION)
+MAX_PER_REGION = None  # None = all Track-A labeled buildings in AOI (natural RES mix)
 EE_BATCH = 400
 RANDOM_STATE = 42
 PIXEL_DECIMALS = 5  # ~1 m lon at equator; ~10 m scale diagnostic
@@ -751,7 +752,8 @@ region_meta
 ## 1. Sample multi-class Overture labels
 
 Map Overture `class` → study rollup (`label`). Stratified sample of up to
-`N_PER_CLASS` buildings **per label per region**. Buildings whose `class` is outside
+All Track-A labeled buildings in each AOI (**unstratified** natural mix). Buildings whose `class` is outside
+
 the rollup (or null) are excluded.
 """
         ),

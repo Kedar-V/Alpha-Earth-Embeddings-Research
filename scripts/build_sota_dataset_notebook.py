@@ -29,10 +29,14 @@ con.execute("SET s3_secret_access_key='';")
 print("DuckDB ready ·", RELEASE)
 
 
-def sample_region(name: str, bbox: tuple[float, float, float, float], n_per_class: int) -> pd.DataFrame:
-    """Pull high-precision Overture buildings whose class maps into STUDY_TAXONOMY."""
+def sample_region(name: str, bbox: tuple[float, float, float, float], max_n: int | None = None) -> pd.DataFrame:
+    """Pull high-precision Overture buildings whose class maps into STUDY_TAXONOMY.
+
+    Unstratified natural mix (no PARTITION BY class). Optional random cap via max_n.
+    """
     xmin, ymin, xmax, ymax = bbox
     class_list = ", ".join(f"'{c}'" for c in sorted(CLASS_TO_LABEL))
+    limit_clause = f"WHERE rn <= {int(max_n)}" if max_n is not None else ""
     sql = f"""
     WITH b AS (
       SELECT
@@ -58,12 +62,9 @@ def sample_region(name: str, bbox: tuple[float, float, float, float], n_per_clas
       WHERE lon BETWEEN {xmin} AND {xmax}
         AND lat BETWEEN {ymin} AND {ymax}
     ),
-    sampled AS (
-      SELECT * FROM (
-        SELECT *, row_number() OVER (PARTITION BY class ORDER BY hash(id)) AS rn
-        FROM filtered
-      ) t
-      WHERE rn <= {n_per_class}
+    ranked AS (
+      SELECT *, row_number() OVER (ORDER BY hash(id)) AS rn
+      FROM filtered
     )
     SELECT
       id,
@@ -77,7 +78,8 @@ def sample_region(name: str, bbox: tuple[float, float, float, float], n_per_clas
       lat,
       wkt,
       area_m2_approx
-    FROM sampled
+    FROM ranked
+    {limit_clause}
     """
     return con.execute(sql).df()
 
@@ -89,9 +91,9 @@ if cache_labels.exists():
 else:
     frames = []
     for name, bbox in US_REGIONS.items():
-        print(f"Sampling · {name} ...", flush=True)
+        print(f"Sampling · {name} (unstratified) ...", flush=True)
         try:
-            frames.append(sample_region(name, bbox, N_PER_CLASS))
+            frames.append(sample_region(name, bbox, MAX_PER_REGION))
         except Exception as e:
             print(f"  FAILED {name}: {e}")
     raw = pd.concat(frames, ignore_index=True)
@@ -194,7 +196,8 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 RELEASE = "2026-08-19.0"
 BUILDINGS = f"s3://overturemaps-us-west-2/release/{RELEASE}/theme=buildings/type=building/*"
 EMBED_YEAR = 2024
-N_PER_CLASS = 80          # per Overture class per region (trial; raise for full runs)
+N_PER_CLASS = None  # unused — sampling is unstratified
+MAX_PER_REGION = None  # None = all Track-A class buildings in AOI (natural RES mix)
 EE_BATCH = 400
 RANDOM_STATE = 42
 EE_PROJECT = os.environ.get("EE_PROJECT", "ee-kedarvaidya0504")
