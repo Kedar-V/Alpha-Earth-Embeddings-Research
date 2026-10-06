@@ -1,0 +1,7 @@
+{
+  "status": "completed",
+  "runtime_seconds": 1784.6747624874115,
+  "n_metros": 10,
+  "baseline_csv": "baseline_loro.csv",
+  "k_summary": "k_summary.csv"
+}

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/>
+<title>Week 4 Briefing</title>
+<style>
+html,body{margin:0;height:100%;background:#05070c}
+#deck{height:100%;display:grid;place-items:center;padding:1rem 1rem 3.2rem}
+.slide{display:none;width:min(100%,900px);aspect-ratio:918/1188;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+.slide.active{display:block}
+.slide img{width:100%;height:100%;object-fit:contain}
+#chrome{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;padding:.55rem 1rem;background:rgba(10,12,18,.9);color:#c9cfdb;font-family:system-ui,sans-serif;font-size:.8rem}
+#chrome button{background:#2a3144;color:#eef1f7;border:0;border-radius:6px;padding:.4rem .75rem;cursor:pointer}
+</style></head><body>
+<div id="deck">
+  <section class="slide active"><img src="briefing_ref/page_01.png" alt="Briefing 1" /></section>
+  <section class="slide"><img src="briefing_ref/page_02.png" alt="Briefing 2" /></section>
+  <section class="slide"><img src="briefing_ref/page_03.png" alt="Briefing 3" /></section>
+  <section class="slide"><img src="briefing_ref/page_04.png" alt="Briefing 4" /></section>
+  <section class="slide"><img src="briefing_ref/page_05.png" alt="Briefing 5" /></section>
+  <section class="slide"><img src="briefing_ref/page_06.png" alt="Briefing 6" /></section>
+  <section class="slide"><img src="briefing_ref/page_07.png" alt="Briefing 7" /></section>
+  <section class="slide"><img src="briefing_ref/page_08.png" alt="Briefing 8" /></section>
+  <section class="slide"><img src="briefing_ref/page_09.png" alt="Briefing 9" /></section>
+  <section class="slide"><img src="briefing_ref/page_10.png" alt="Briefing 10" /></section>
+  <section class="slide"><img src="briefing_ref/page_11.png" alt="Briefing 11" /></section>
+  <section class="slide"><img src="briefing_ref/page_12.png" alt="Briefing 12" /></section>
+  <section class="slide"><img src="briefing_ref/page_13.png" alt="Briefing 13" /></section>
+  <section class="slide"><img src="briefing_ref/page_14.png" alt="Briefing 14" /></section>
+  <section class="slide"><img src="briefing_ref/page_15.png" alt="Briefing 15" /></section>
+  <section class="slide"><img src="briefing_ref/page_16.png" alt="Briefing 16" /></section>
+  <section class="slide"><img src="briefing_ref/page_17.png" alt="Briefing 17" /></section>
+  <section class="slide"><img src="briefing_ref/page_18.png" alt="Briefing 18" /></section>
+  <section class="slide"><img src="briefing_ref/page_19.png" alt="Briefing 19" /></section>
+  <section class="slide"><img src="briefing_ref/page_20.png" alt="Briefing 20" /></section>
+  <section class="slide"><img src="briefing_ref/page_21.png" alt="Briefing 21" /></section>
+  <section class="slide"><img src="briefing_ref/page_22.png" alt="Briefing 22" /></section>
+</div>
+<div id="chrome">
+  <div><button id="prev">← Prev</button> <button id="next">Next →</button></div>
+  <div>week4_briefing.pdf · full pptx has synthesis + plot appendix</div>
+  <div id="counter">1 / 22</div>
+</div>
+<script>
+const slides=[...document.querySelectorAll('.slide')]; let i=0;
+const counter=document.getElementById('counter');
+function show(n){i=Math.max(0,Math.min(slides.length-1,n));slides.forEach((s,j)=>s.classList.toggle('active',j===i));counter.textContent=(i+1)+' / '+slides.length;history.replaceState(null,'','#'+(i+1));}
+document.getElementById('next').onclick=()=>show(i+1);
+document.getElementById('prev').onclick=()=>show(i-1);
+window.addEventListener('keydown',e=>{
+  if(['ArrowRight','PageDown',' ','Enter'].includes(e.key)){e.preventDefault();show(i+1);}
+  if(['ArrowLeft','PageUp','Backspace'].includes(e.key)){e.preventDefault();show(i-1);}
+});
+const h=parseInt((location.hash||'#1').slice(1),10); show(Number.isFinite(h)&&h>0?h-1:0);
+</script></body></html>

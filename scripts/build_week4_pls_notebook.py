@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import nbformat as nbf
@@ -107,18 +108,56 @@ Coarse sweep `n_components ∈ {summary.get('n_comps_sweep')}`; fine PLS-DA swee
 """)
 
     viz = jload(OUT / "pls_t1_t2_viz.json")
+    pr_path = OUT / "per_region_precision_recall.csv"
+    pr_df = pd.read_csv(pr_path) if pr_path.exists() else None
+    base_pr = (
+        pr_df.loc[pr_df["model"] == "baseline_lr"].set_index("region")
+        if pr_df is not None
+        else None
+    )
+
+    def pr_cell(region: str, col: str) -> str:
+        if base_pr is None or region not in base_pr.index:
+            return "—"
+        return fmt(base_pr.loc[region, col])
+
     if viz:
+        # build per-metro reading table joining cluster F1 + LR PR/FN
+        t1t2 = pd.read_csv(OUT / "pls_t1_t2_by_region.csv") if (OUT / "pls_t1_t2_by_region.csv").exists() else None
+        read_rows = []
+        if t1t2 is not None and base_pr is not None:
+            joined = t1t2.set_index("region").join(base_pr, how="left", rsuffix="_lr")
+            # failure-mode tag
+            def mode(r):
+                fnr, prec, rec_n = r["fn_rate_res"], r["precision_res"], r["recall_nres"]
+                if fnr >= 0.35:
+                    return "FN-heavy (RES→NRES)"
+                if prec < 0.70 or rec_n < 0.65:
+                    return "FP-heavy (NRES→RES)"
+                if r["macro_f1"] >= 0.85:
+                    return "clean split"
+                return "mixed"
+            for region, r in joined.sort_values("macro_f1").iterrows():
+                read_rows.append(
+                    f"| {region} | {fmt(r['f1_2d_inregion'])} | {fmt(r['mean_t1_res'], 2)} | "
+                    f"{fmt(r['mean_t1_nres'], 2)} | {fmt(r['precision_res'])} | {fmt(r['recall_res'])} | "
+                    f"**{fmt(r['fn_rate_res'])}** | {mode(r)} |"
+                )
+        read_table = "\n".join(read_rows) if read_rows else "| — | — | — | — | — | — | — | — |"
+
         md(f"""
 ## Do RES / NRES form two clusters in $(t_1, t_2)$?
 
-Yes — mostly along **$t_1$**. Orange = non-residential (left), blue = residential (right). The decision boundary is nearly vertical, so $t_2$ adds little.
+**Partly — and the hard cities tell you *how* the blobs fail.**
+
+Orange = non-residential, blue = residential. Globally the mass separates along **$t_1$** (NRES left, RES right); the $P=0.5$ cut is nearly vertical, so $t_2$ is a thin residual. Marginals: RES peaks near $t_1 \\approx +4$, NRES near $t_1 \\approx -2.5$, with a real overlap band around $t_1 \\in [-1, +2]$.
 
 | Probe on pooled OOF scores | macro-F1 |
 |---|---:|
 | 1D LR on $t_1$ only | {fmt(viz.get('oof_f1_1d_t1'))} |
 | 2D LR on $(t_1, t_2)$ | {fmt(viz.get('oof_f1_2d_t1_t2'))} |
 
-These pooled-OOF numbers are descriptive (refit on all metros’ OOF scores). Honest LORO at k=2 is lower (~0.74 in the fine sweep) because fold transfer is harder than a global 2D cut.
+Pooled-OOF F1 is descriptive. Honest LORO at k=2 is ~0.74 — transfer is harder than a global 2D cut.
 
 ```bash
 .venv/bin/python -u scripts/plot_week4_pls_t1_t2.py
@@ -128,9 +167,79 @@ These pooled-OOF numbers are descriptive (refit on all metros’ OOF scores). Ho
 
 ![Marginals](../../outputs/week4_pls_loro/figures/pls_t1_t2_marginals.png)
 
+### Reading the per-metro panels with precision / recall
+
+What “two clear clusters” looks like in $(t_1,t_2)$ is the same signal the OOF LR metrics quantify. Join in-panel 2D structure with baseline-LR Prec/Recall/FN (RES = positive):
+
+| Metro | in-panel 2D F1 | mean $t_1$ RES | mean $t_1$ NRES | Prec RES | Recall RES | FN rate | What the plot is doing |
+|---|---:|---:|---:|---:|---:|---:|---|
+{read_table}
+
+**How to read the blobs**
+
+1. **Clean two-blob cities** (Phoenix, Atlanta, Denver, LA) — class means on $t_1$ sit far apart (often $\\Delta t_1 \\gtrsim 4$). FN rate is low and Prec RES stays high. The black cut sits in a low-density gap; little ink in the wrong lobe.
+2. **FN-heavy cities** (SF FN=0.51, Chicago 0.44, Houston 0.40) — a large blue mass still sits on the **left / NRES side** of $t_1$, or the RES cloud is pulled left so many true RES cells fall past the cut. Plot cue: blue points mixed into the orange lobe; high FN, often still decent Prec RES (model is shy about calling RES). Chicago’s RES mean $t_1$ is near **0** — almost no rightward RES lobe.
+3. **FP-heavy cities** (NYC, Boston, and Seattle on metrics) — orange bleeds **right** into the RES side. Prec RES drops and/or NRES recall is weak. Plot cue: orange points across the cut into the blue region; FN rate alone can look “ok” (Boston 0.15, Seattle 0.06) while precision is the problem.
+4. **NYC / SF / Chicago** are the visually overlapped panels — not one failure mode. SF/Chicago miss RES; NYC overlaps both ways with low Prec.
+
 ![Per metro](../../outputs/week4_pls_loro/figures/pls_t1_t2_by_region.png)
 
-Clear two-blob structure in Phoenix / Atlanta / Denver / LA / Seattle; more overlap in NYC / SF / Chicago — same pattern as the week-4 UMAP hard cities.
+**Bottom line for the cluster plots:** two modes exist along $t_1$, but hard metros are not “no clusters” — they are **shifted / overlapping modes** whose failure type (FN vs FP) you can see as blue-on-the-left vs orange-on-the-right.
+""")
+
+    if pr_df is not None:
+        base_pr_sorted = pr_df.loc[pr_df["model"] == "baseline_lr"].sort_values(
+            "fn_rate_res", ascending=False
+        )
+        hard = {"NYC_NE", "SF_W", "Chicago_MW", "Boston_NE"}
+        lines = []
+        for _, r in base_pr_sorted.iterrows():
+            mark = " ← hard" if r["region"] in hard else ""
+            lines.append(
+                f"| {r['region']} | {fmt(r['precision_res'])} | {fmt(r['recall_res'])} | "
+                f"**{fmt(r['fn_rate_res'])}** | {fmt(r['precision_nres'])} | {fmt(r['recall_nres'])} | "
+                f"{fmt(r['macro_f1'])} |{mark}"
+            )
+        table = "\n".join(lines)
+        h = base_pr_sorted.loc[base_pr_sorted.region.isin(hard)]
+        e = base_pr_sorted.loc[~base_pr_sorted.region.isin(hard)]
+        md(f"""
+## Per-metro precision / recall / FN rate
+
+Positive class = **residential**. FN rate = missed RES / all true RES $= 1 - \\mathrm{{recall}}_{{\\mathrm{{res}}}}$. Same numbers used to annotate the cluster panels above.
+
+Baseline LR OOF (LORO), sorted by RES FN rate:
+
+| Metro | Prec RES | Recall RES | FN rate RES | Prec NRES | Recall NRES | macro-F1 | |
+|---|---:|---:|---:|---:|---:|---:|---|
+{table}
+
+| Group | mean FN rate RES | mean Recall RES | mean Prec RES | mean macro-F1 |
+|---|---:|---:|---:|---:|
+| Hard (NYC, SF, Chicago, Boston) | {fmt(h.fn_rate_res.mean())} | {fmt(h.recall_res.mean())} | {fmt(h.precision_res.mean())} | {fmt(h.macro_f1.mean())} |
+| Other | {fmt(e.fn_rate_res.mean())} | {fmt(e.recall_res.mean())} | {fmt(e.precision_res.mean())} | {fmt(e.macro_f1.mean())} |
+
+![Per-metro Prec / Recall / FN](../../outputs/week4_pls_loro/figures/per_region_prec_recall_fnr.png)
+""")
+
+        code("""
+pr = pd.read_csv(OUT / "per_region_precision_recall.csv")
+pr.loc[pr.model == "baseline_lr", [
+    "region", "precision_res", "recall_res", "fn_rate_res",
+    "precision_nres", "recall_nres", "macro_f1", "fn", "fp"
+]].sort_values("fn_rate_res", ascending=False)
+""")
+
+    eq_md = OUT / "pls_da_k10_equation.md"
+    if eq_md.exists():
+        md(eq_md.read_text())
+        code("""
+betas = pd.read_csv(OUT / "pls_da_k10_lr_betas.csv")
+R = pd.read_csv(OUT / "pls_da_k10_loadings_R.csv", index_col=0)
+c = pd.read_csv(OUT / "pls_da_k10_compact_c.csv")
+print(betas.to_string(index=False))
+print("\\nTop |c| on scaled AE:")
+print(c.reindex(c.c.abs().sort_values(ascending=False).index).head(12).to_string(index=False))
 """)
 
     md("""
@@ -256,6 +365,18 @@ sweep.loc[sweep.model.isin(frac_models), [
     "model", "n_components", "loro_mae_mean", "loro_mae_std"
 ]].sort_values(["model", "n_components"])
 """)
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from plot_week4_v4_clusters import markdown as v4_cluster_markdown
+    from plot_week4_v4_clusters import write_figures as write_v4_figures
+
+    try:
+        write_v4_figures()
+        section = v4_cluster_markdown()
+        if section.strip():
+            md(section)
+    except Exception as exc:
+        print(f"v4 cluster section skipped: {exc}")
 
     k99 = fine.get("cov_cum_k99") if fine else 5
     k02 = (fine.get("min_k_criteria") or {}).get("within_0.02_F1", {}).get("k") if fine else 9

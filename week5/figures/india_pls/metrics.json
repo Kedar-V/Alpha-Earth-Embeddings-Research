@@ -1,0 +1,96 @@
+{
+  "n": 795694,
+  "cities": [
+    "IND_BENGALURU",
+    "IND_CHENNAI",
+    "IND_DELHI",
+    "IND_KOLKATA",
+    "IND_MUMBAI"
+  ],
+  "pooled_f1_2d": 0.6610382555142109,
+  "pooled_delta_t1": 1.3435635515767026,
+  "per_city": [
+    {
+      "city_id": "IND_BENGALURU",
+      "city": "Bengaluru",
+      "n": 348210,
+      "f1_2d": 0.6996797257415954,
+      "delta_t1": 1.7614323950727566,
+      "mean_t1_res": 0.8807161975363783,
+      "mean_t1_nres": -0.8807161975363783
+    },
+    {
+      "city_id": "IND_CHENNAI",
+      "city": "Chennai",
+      "n": 62658,
+      "f1_2d": 0.6806609672970282,
+      "delta_t1": 1.6072295314041556,
+      "mean_t1_res": 0.803614765702078,
+      "mean_t1_nres": -0.8036147657020775
+    },
+    {
+      "city_id": "IND_DELHI",
+      "city": "Delhi",
+      "n": 157894,
+      "f1_2d": 0.7039953071529242,
+      "delta_t1": 2.1045857321486787,
+      "mean_t1_res": 1.0522928660743394,
+      "mean_t1_nres": -1.0522928660743396
+    },
+    {
+      "city_id": "IND_KOLKATA",
+      "city": "Kolkata",
+      "n": 24824,
+      "f1_2d": 0.6697968303268154,
+      "delta_t1": 1.522719870375946,
+      "mean_t1_res": 0.7613599351879728,
+      "mean_t1_nres": -0.7613599351879731
+    },
+    {
+      "city_id": "IND_MUMBAI",
+      "city": "Mumbai",
+      "n": 202108,
+      "f1_2d": 0.732292227005156,
+      "delta_t1": 2.7159539807250828,
+      "mean_t1_res": 1.3579769903625412,
+      "mean_t1_nres": -1.3579769903625416
+    }
+  ],
+  "loro": [
+    {
+      "city_id": "IND_BENGALURU",
+      "city": "Bengaluru",
+      "n_test": 348210,
+      "f1_2d_loro": 0.5874306759700934,
+      "delta_t1_test": 0.8166503464104253
+    },
+    {
+      "city_id": "IND_CHENNAI",
+      "city": "Chennai",
+      "n_test": 62658,
+      "f1_2d_loro": 0.6237879470957736,
+      "delta_t1_test": 1.1250432493080813
+    },
+    {
+      "city_id": "IND_DELHI",
+      "city": "Delhi",
+      "n_test": 157894,
+      "f1_2d_loro": 0.6215253778928695,
+      "delta_t1_test": 1.4737488127396776
+    },
+    {
+      "city_id": "IND_KOLKATA",
+      "city": "Kolkata",
+      "n_test": 24824,
+      "f1_2d_loro": 0.6060702346033855,
+      "delta_t1_test": 0.8678974904896125
+    },
+    {
+      "city_id": "IND_MUMBAI",
+      "city": "Mumbai",
+      "n_test": 202108,
+      "f1_2d_loro": 0.6210343089215171,
+      "delta_t1_test": 1.0131005588216857
+    }
+  ]
+}

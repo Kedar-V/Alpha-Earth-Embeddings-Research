@@ -1,0 +1,10 @@
+{
+  "headline": "figures/01_headline_loro_and_transfer.png",
+  "country_heat": "figures/02_country_transfer_heatmap.png",
+  "loro_city": "figures/03_loro_by_city.png",
+  "city_heat": "figures/04_city_transfer_heatmap.png",
+  "blocks": "figures/05_block_averages_and_retention.png",
+  "models": "figures/06_model_comparison_transfer.png",
+  "sizes": "figures/07_sample_sizes.png",
+  "asym": "figures/08_transfer_asymmetry.png"
+}

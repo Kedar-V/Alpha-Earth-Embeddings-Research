@@ -1,0 +1,7 @@
+{
+  "status": "completed",
+  "runtime_seconds": 203.73633933067322,
+  "n_metros": 10,
+  "n_pairs": 45,
+  "note": "Correlations use the 45 unordered metro pairs. Permutations shuffle metro labels. Ten metros is the geographic sample size; pair p-values are not independent evidence."
+}

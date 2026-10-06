@@ -1,0 +1,27 @@
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: aef_international_postgis
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aef_international}
+      POSTGRES_USER: ${POSTGRES_USER:-aef}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - aef_postgis_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    shm_size: 1g
+
+volumes:
+  aef_postgis_data:
+    name: aef_international_postgis_data

@@ -158,7 +158,7 @@ def main() -> None:
     fig.text(
         0.01,
         0.98,
-        "Per-metro view in the same 2 PLS axes — clusters vary by city, t₁ still carries most of the split",
+        "Per-metro $(t_1,t_2)$: clean split vs FN-heavy (blue on left) vs FP-heavy (orange on right)",
         fontsize=12,
         fontweight="bold",
         ha="left",
@@ -168,7 +168,7 @@ def main() -> None:
     fig.text(
         0.01,
         0.955,
-        "Blue = residential, orange = non-residential. Black curve = in-region 2D logistic P=0.5 (descriptive, not LORO).",
+        "Blue=RES, orange=NRES. SF/Chicago/Houston pull RES left (high FN); NYC/Boston leak NRES right (low Prec). Black = in-region P=0.5.",
         fontsize=9,
         color="#555555",
         ha="left",

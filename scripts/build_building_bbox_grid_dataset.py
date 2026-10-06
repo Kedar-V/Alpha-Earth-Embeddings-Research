@@ -50,10 +50,14 @@ SRC_DATASET = ROOT / "outputs" / "building_type_dataset" / "dataset.parquet"
 OUT_DIR = ROOT / "datasets" / "building_bbox_grid"
 CACHE_DIR = OUT_DIR / "_cache"
 TILE_CACHE = CACHE_DIR / "tiles"
+EMBED_YEAR = 2024
 INDEX_FULL = CACHE_DIR / "aef_index.parquet"
 INDEX_US = CACHE_DIR / "aef_index_2024_us.parquet"
+INDEX_YEAR = CACHE_DIR / f"aef_index_{EMBED_YEAR}.parquet"
 
-EMBED_YEAR = 2024
+# Default CONUS filter retained for week3/week4 USA pipelines.
+US_BBOX = (-125.0, -66.0, 24.0, 50.0)  # west, east, south, north
+
 BANDS = [f"A{i:02d}" for i in range(64)]
 INDEX_URL = (
     "https://storage.googleapis.com/alphaearth_foundations/"
@@ -98,25 +102,60 @@ def dequantize(values: np.ndarray) -> np.ndarray:
     return ((v / 127.5) ** 2) * np.sign(v)
 
 
-def ensure_index() -> pd.DataFrame:
+def _ensure_year_index() -> Path:
+    """Download full AEF index and cache year-filtered global parquet."""
     import urllib.request
 
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     if not INDEX_FULL.exists():
         print(f"Downloading AEF index -> {INDEX_FULL} ...", flush=True)
         urllib.request.urlretrieve(INDEX_URL, INDEX_FULL)
-    if not INDEX_US.exists():
-        print("Filtering 2024 US tiles ...", flush=True)
+    if not INDEX_YEAR.exists():
+        print(f"Filtering year={EMBED_YEAR} global tiles -> {INDEX_YEAR} ...", flush=True)
         t = pd.read_parquet(INDEX_FULL)
         t = t.loc[t["year"] == EMBED_YEAR].copy()
-        t = t.loc[
-            (t["wgs84_west"] <= -66.0)
-            & (t["wgs84_east"] >= -125.0)
-            & (t["wgs84_south"] <= 50.0)
-            & (t["wgs84_north"] >= 24.0)
-        ].copy()
-        t.to_parquet(INDEX_US, index=False)
-    return pd.read_parquet(INDEX_US)
+        t.to_parquet(INDEX_YEAR, index=False)
+    return INDEX_YEAR
+
+
+def ensure_index(
+    bbox: tuple[float, float, float, float] | None = None,
+) -> pd.DataFrame:
+    """Return 2024 AEF tiles intersecting ``bbox`` (west, east, south, north).
+
+    ``bbox=None`` keeps the historical CONUS subset used by USA week3/week4 jobs.
+    Pass a regional bbox (e.g. India) for international ingest.
+    """
+    year_path = _ensure_year_index()
+    west, east, south, north = US_BBOX if bbox is None else bbox
+
+    # Fast path: reused US cache when default bbox requested.
+    if bbox is None:
+        if not INDEX_US.exists():
+            print("Filtering 2024 US tiles ...", flush=True)
+            t = pd.read_parquet(year_path)
+            t = t.loc[
+                (t["wgs84_west"] <= east)
+                & (t["wgs84_east"] >= west)
+                & (t["wgs84_south"] <= north)
+                & (t["wgs84_north"] >= south)
+            ].copy()
+            t.to_parquet(INDEX_US, index=False)
+        return pd.read_parquet(INDEX_US)
+
+    t = pd.read_parquet(year_path)
+    hit = t.loc[
+        (t["wgs84_west"] <= east)
+        & (t["wgs84_east"] >= west)
+        & (t["wgs84_south"] <= north)
+        & (t["wgs84_north"] >= south)
+    ].copy()
+    print(
+        f"AEF index bbox=({west:.3f},{east:.3f},{south:.3f},{north:.3f}) "
+        f"tiles={len(hit)}/{len(t)}",
+        flush=True,
+    )
+    return hit
 
 
 def window_rc(src: rasterio.DatasetReader, west: float, south: float, east: float, north: float):

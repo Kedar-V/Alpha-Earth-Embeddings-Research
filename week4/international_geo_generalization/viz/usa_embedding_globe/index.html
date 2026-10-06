@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AlphaEarth — USA / India / Japan Globe</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a2e;
+      --text: #e8eefc;
+      --muted: #93a0bd;
+      --accent: #6ea8fe;
+      --border: #24304d;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%;
+      background: var(--bg); color: var(--text);
+      font: 14px/1.4 "IBM Plex Sans", "Segoe UI", sans-serif;
+      overflow: hidden;
+    }
+    #app {
+      display: grid;
+      grid-template-columns: minmax(180px, 260px) minmax(0, 1fr) minmax(220px, 300px);
+      height: 100%;
+      min-width: 0;
+    }
+    aside, #detail {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 16px;
+      overflow: auto;
+      min-width: 0;
+    }
+    #detail { border-right: none; border-left: 1px solid var(--border); }
+    h1 { font-size: 16px; margin: 0 0 4px; font-weight: 600; }
+    .sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+    .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
+    button, select {
+      background: #1a2540; color: var(--text);
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 7px 10px; cursor: pointer;
+    }
+    button.active, button:hover { border-color: var(--accent); color: #fff; }
+    button.zoom-city {
+      padding: 2px 8px; font-size: 11px; margin-left: auto;
+    }
+    #view { position: relative; min-width: 0; min-height: 0; }
+    #globe, #umap { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #umap { display: none; }
+    #axis-legend {
+      display: none;
+      position: absolute; top: 12px; left: 12px; z-index: 2;
+      background: rgba(18,26,46,0.9); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 10px; font-size: 12px; color: var(--muted);
+      line-height: 1.55; pointer-events: none;
+    }
+    #axis-legend.show { display: block; }
+    #axis-legend b { font-weight: 600; }
+    #axis-legend .ax { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+    #zoom-controls {
+      display: none;
+      position: absolute; top: 12px; right: 12px; z-index: 5;
+      flex-direction: column; gap: 6px;
+    }
+    #zoom-controls.show { display: flex; }
+    #zoom-controls button {
+      width: 40px; height: 40px; font-size: 20px; font-weight: 600;
+      border-radius: 8px; background: rgba(18,26,46,0.92);
+      border: 1px solid var(--border); color: var(--text); cursor: pointer;
+      line-height: 1; padding: 0;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+    }
+    #zoom-controls button:hover { border-color: var(--accent); color: #fff; }
+    @media (max-width: 1100px) {
+      #app { grid-template-columns: 220px minmax(0, 1fr); }
+      #detail {
+        position: fixed; right: 0; top: 0; bottom: 0; width: min(360px, 92vw);
+        z-index: 6; display: none; border-left: 1px solid var(--border);
+        box-shadow: -10px 0 28px rgba(0,0,0,0.4);
+      }
+      #detail.open { display: block; }
+      #detail-close { display: inline-block; }
+    }
+    #detail-close {
+      display: none; float: right; margin: -4px 0 8px;
+      background: transparent; border: 1px solid var(--border); color: var(--muted);
+    }
+    .legend-item {
+      display: flex; align-items: center; gap: 8px;
+      margin: 4px 0; font-size: 12px;
+    }
+    .legend-item .name { cursor: pointer; flex: 1; min-width: 0; }
+    .legend-item .name:hover { color: #fff; }
+    .swatch { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+    .legend-item.off .name { opacity: 0.35; }
+    .legend-item.focused .name { color: var(--accent); font-weight: 600; }
+    #hint {
+      position: absolute; left: 12px; bottom: 12px;
+      background: rgba(18,26,46,0.85); border: 1px solid var(--border);
+      padding: 8px 10px; border-radius: 6px; color: var(--muted); font-size: 12px;
+      pointer-events: none; z-index: 2; max-width: min(420px, 70%);
+    }
+    .meta { font-size: 12px; color: var(--muted); }
+    .meta b { color: var(--text); font-weight: 600; }
+    .chip {
+      width: 100%; border-radius: 8px; border: 1px solid var(--border);
+      margin: 8px 0; background: #000; display: block;
+    }
+    .chip-wrap {
+      position: relative;
+      width: 100%;
+      margin: 8px 0;
+    }
+    .chip-wrap .chip {
+      margin: 0;
+      display: block;
+    }
+    .chip-bbox {
+      position: absolute;
+      left: 45%;
+      top: 45%;
+      width: 10%;
+      height: 10%;
+      border: 2px solid #6ea8fe;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75);
+      pointer-events: none;
+      box-sizing: border-box;
+    }
+    .chip-bbox-label {
+      position: absolute;
+      left: 45%;
+      top: calc(45% - 16px);
+      transform: translateX(-10%);
+      font-size: 10px;
+      color: #6ea8fe;
+      background: rgba(11, 16, 32, 0.85);
+      padding: 1px 5px;
+      border-radius: 3px;
+      pointer-events: none;
+      white-space: nowrap;
+      line-height: 1.2;
+    }
+    .chip-label { font-size: 11px; color: var(--muted); margin-top: 10px; }
+    .empty { color: var(--muted); margin-top: 40px; }
+    .kv { display: grid; grid-template-columns: 110px 1fr; gap: 4px 8px; margin: 10px 0 14px; }
+    .kv span:nth-child(odd) { color: var(--muted); }
+    .gtpred {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      margin: 10px 0 4px;
+    }
+    .gtpred .box {
+      border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+      background: #0e1528;
+    }
+    .gtpred .box .lbl {
+      font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .gtpred .box .val { font-size: 18px; font-weight: 600; margin-top: 2px; }
+    .gtpred .box.res .val { color: #5ad67d; }
+    .gtpred .box.nres .val { color: #f0a35e; }
+    .match-pill {
+      display: inline-block; margin: 6px 0 10px; padding: 3px 8px; border-radius: 999px;
+      font-size: 11px; border: 1px solid var(--border);
+    }
+    .match-pill.ok { color: #5ad67d; border-color: #2f6b45; background: #102418; }
+    .match-pill.bad { color: #ff7b7b; border-color: #6b2f2f; background: #241010; }
+    #focus-banner {
+      display: none;
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      z-index: 3; background: rgba(18,26,46,0.92); border: 1px solid var(--accent);
+      border-radius: 8px; padding: 8px 12px; font-size: 12px;
+      align-items: center; gap: 10px;
+    }
+    #focus-banner.show { display: flex; }
+    #walk {
+      display: none; position: absolute; inset: 0; overflow: auto;
+      padding: 16px 18px 70px; background: var(--bg);
+    }
+    #walk h2 { font-size: 15px; margin: 0 0 6px; font-weight: 600; }
+    #walk .walk-blurb { color: var(--muted); font-size: 12px; margin-bottom: 12px; max-width: 720px; }
+    #walk-chart {
+      width: 100%; max-width: 720px; height: 160px;
+      background: #0e1528; border: 1px solid var(--border); border-radius: 8px;
+      margin-bottom: 14px;
+    }
+    #walk-strip {
+      display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px;
+    }
+    .walk-frame {
+      flex: 0 0 132px; cursor: pointer;
+      border: 1px solid var(--border); border-radius: 8px; padding: 6px;
+      background: #121a2e;
+    }
+    .walk-frame.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .walk-frame img {
+      width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px;
+      display: block; background: #000;
+    }
+    .walk-frame .cap { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.35; }
+    .walk-frame .cap b { color: var(--text); font-weight: 600; }
+    #walk-status { margin-top: 10px; }
+  </style>
+  <script src="https://unpkg.com/globe.gl@2.32.1/dist/globe.gl.min.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <aside>
+      <h1>AlphaEarth sample</h1>
+      <div class="sub">USA + India + Japan · labeled res / non-res · LORO LR + PLS-3 · imagery 10/50/500 m</div>
+      <div class="row">
+        <button id="btn-globe">Globe</button>
+        <button id="btn-umap" class="active">PLS 3D</button>
+        <button id="btn-walk">Boundary walk</button>
+      </div>
+      <div class="row" id="row-country">
+        <label class="meta">Country
+          <select id="country-filter">
+            <option value="all" selected>all</option>
+            <option value="USA">USA</option>
+            <option value="IND">India</option>
+            <option value="JPN">Japan</option>
+          </select>
+        </label>
+      </div>
+      <div class="row" id="row-color">
+        <label class="meta">Color by
+          <select id="color-mode">
+            <option value="gt" selected>GT label</option>
+            <option value="pred">prediction</option>
+            <option value="correct">correct / wrong</option>
+            <option value="city">city</option>
+            <option value="country">country</option>
+            <option value="pca">PLS-1</option>
+          </select>
+        </label>
+      </div>
+      <div class="row" id="row-fit">
+        <button id="btn-fit-all" type="button">Fit all</button>
+        <button id="btn-clear-focus" type="button">Clear city zoom</button>
+      </div>
+      <div class="row" id="row-browse">
+        <label class="meta">Browse
+          <select id="browse-filter">
+            <option value="all" selected>all labeled</option>
+            <option value="res">GT residential</option>
+            <option value="nres">GT non-res</option>
+            <option value="wrong">mismatches</option>
+            <option value="correct">correct only</option>
+          </select>
+        </label>
+      </div>
+      <div class="row" id="row-browse-btns">
+        <button id="btn-prev" type="button" title="Left arrow">← Prev</button>
+        <button id="btn-next" type="button" title="Right arrow">Next →</button>
+      </div>
+      <div class="row" id="row-walk-city" style="display:none;">
+        <label class="meta">City
+          <select id="walk-city"></select>
+        </label>
+      </div>
+      <div class="row" id="row-walk-btns" style="display:none;">
+        <button id="btn-walk-prev" type="button">← Frame</button>
+        <button id="btn-walk-next" type="button">Frame →</button>
+      </div>
+      <div id="browse-status" class="meta"></div>
+      <div id="stats" class="meta"></div>
+      <div id="color-legend" class="meta" style="margin-top:8px;"></div>
+      <hr style="border-color:var(--border); margin:14px 0;" />
+      <div class="meta" style="margin-bottom:6px;" id="legend-caption">Cities — <b>Zoom</b> frames that cluster; name toggles visibility</div>
+      <div id="legend"></div>
+      <div id="walk-method" class="meta" style="display:none; line-height:1.45;">
+        <div style="color:var(--text); font-weight:600; margin-bottom:6px;">Method</div>
+        <p style="margin:0 0 8px;">
+          Per city: prefer correct cells with P(res)&gt;0.9 / &lt;0.1 (≥3 each). If a side is
+          thin, widen to 0.7/0.3, then any correct, then GT extremes by P(res).
+          Twelve equal steps between those centroids.
+        </p>
+        <p style="margin:0 0 8px;">
+          Patches: cosine NN in LORO PLS-DA dims&nbsp;1–32 over that city's viz sample
+          (skip a repeat of the previous cell when a second neighbor exists).
+        </p>
+        <p style="margin:0;">
+          Curve: same steps in LORO PLS dims&nbsp;1–3, scored with that city's
+          PLS-3 logistic (extract LORO fold). NN patches still use PLS-32.
+        </p>
+      </div>
+    </aside>
+    <div id="view">
+      <div id="focus-banner">
+        <span id="focus-text"></span>
+        <button id="focus-clear" type="button">Show all</button>
+      </div>
+      <div id="globe"></div>
+      <div id="umap"></div>
+      <div id="walk">
+        <h2 id="walk-title">Boundary walk</h2>
+        <div class="walk-blurb" id="walk-blurb">
+          Per-city straight line from high-confidence correct residential centroid
+          (P(res)&gt;0.9) to non-residential centroid (P(res)&lt;0.1) in LORO PLS space.
+          Each frame is the nearest real 10&nbsp;m patch (PLS-32 cosine NN); the curve is
+          LORO PLS-3 logistic P(res) on the parallel PLS-3 centroid path.
+        </div>
+        <canvas id="walk-chart" width="720" height="160"></canvas>
+        <div id="walk-strip"></div>
+        <div id="walk-status" class="meta"></div>
+      </div>
+      <div id="axis-legend">
+        <div><span class="ax" style="background:#ff5c5c"></span><b>X</b> · PLS-1 (±)</div>
+        <div><span class="ax" style="background:#5ad67d"></span><b>Y</b> · PLS-2 (±)</div>
+        <div><span class="ax" style="background:#6ea8fe"></span><b>Z</b> · PLS-3 (±)</div>
+      </div>
+      <div id="zoom-controls">
+        <button id="btn-zoom-in" type="button" title="Zoom in (+ / scroll)">+</button>
+        <button id="btn-zoom-out" type="button" title="Zoom out (− / scroll)">−</button>
+      </div>
+      <div id="hint">← → step · pinch/scroll zoom · +/− buttons · R/N/W/A filters · click for imagery</div>
+    </div>
+    <div id="detail">
+      <button id="detail-close" type="button">Close</button>
+      <div class="empty" id="detail-empty">Select a cell on the globe or in embedding space.</div>
+      <div id="detail-body" style="display:none;">
+        <h1 id="d-title"></h1>
+        <div class="sub" id="d-sub"></div>
+        <div class="gtpred">
+          <div class="box" id="d-gt-box">
+            <div class="lbl">Ground truth</div>
+            <div class="val" id="d-gt">—</div>
+          </div>
+          <div class="box" id="d-pred-box">
+            <div class="lbl">Prediction</div>
+            <div class="val" id="d-pred">—</div>
+          </div>
+        </div>
+        <div id="d-match" class="match-pill"></div>
+        <div class="kv" id="d-kv"></div>
+        <div class="chip-label">10 m cell (exact, no pad)</div>
+        <img id="d-patch" class="chip" alt="10m patch" />
+        <div class="chip-label">50 m context</div>
+        <img id="d-context" class="chip" alt="50m context" />
+        <div class="chip-label">500 m context · blue box = 50 m</div>
+        <div class="chip-wrap" id="d-context500-wrap" style="display:none;">
+          <img id="d-context500" class="chip" alt="500m context" />
+          <div class="chip-bbox" title="50 m context"></div>
+          <div class="chip-bbox-label">50 m</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const state = {
+      data: null,
+      walks: null,
+      mode: 'umap',
+      colorMode: 'gt',
+      browseFilter: 'all',
+      countryFilter: 'all',
+      browseIndex: -1,
+      hidden: new Set(),
+      focusCity: null,
+      selected: null,
+      walkCity: null,
+      walkFrame: 0,
+      globe: null,
+      umap: null,
+    };
+
+    function gtClass(p) {
+      const n = p.gt != null ? Number(p.gt) : Number(p.label);
+      if (n === 1) return 'res';
+      if (n === 0) return 'nres';
+      return null;
+    }
+
+    function predClass(p) {
+      if (p.pred == null || p.pred === '') return null;
+      const n = Number(p.pred);
+      if (n === 1) return 'res';
+      if (n === 0) return 'nres';
+      return null;
+    }
+
+    function nameOf(kind) {
+      if (kind === 'res') return 'residential';
+      if (kind === 'nres') return 'non-res';
+      return '—';
+    }
+
+    function classColor(kind) {
+      if (kind === 'res') return '#5ad67d';
+      if (kind === 'nres') return '#f0a35e';
+      return '#7f8aa3';
+    }
+
+    const GT_LEGEND = [
+      { key: 'res', name: 'GT residential', color: '#5ad67d' },
+      { key: 'nres', name: 'GT non-residential', color: '#f0a35e' },
+    ];
+    const PRED_LEGEND = [
+      { key: 'res', name: 'pred residential', color: '#5ad67d' },
+      { key: 'nres', name: 'pred non-residential', color: '#f0a35e' },
+    ];
+    const CORRECT_LEGEND = [
+      { key: 'ok', name: 'correct', color: '#5ad67d' },
+      { key: 'bad', name: 'wrong', color: '#ff6b6b' },
+    ];
+
+    const pcaColor = (t) => {
+      const r = Math.round(40 + 200 * t);
+      const g = Math.round(80 + 100 * (1 - Math.abs(t - 0.5) * 2));
+      const b = Math.round(220 - 180 * t);
+      return `rgb(${r},${g},${b})`;
+    };
+
+    const COUNTRY_COLOR = { USA: '#6ea8fe', IND: '#f0a35e', JPN: '#5ad67d' };
+
+    function pointCountry(p) {
+      return p.country || (p.city_id ? String(p.city_id).split('_')[0] : null);
+    }
+
+    function pointColor(p) {
+      if (state.colorMode === 'gt') return classColor(gtClass(p));
+      if (state.colorMode === 'pred') return classColor(predClass(p));
+      if (state.colorMode === 'correct') {
+        if (p.correct === true) return '#5ad67d';
+        if (p.correct === false) return '#ff6b6b';
+        return '#7f8aa3';
+      }
+      if (state.colorMode === 'country') return COUNTRY_COLOR[pointCountry(p)] || '#7f8aa3';
+      if (state.colorMode === 'pca') return pcaColor(p.pca1 ?? 0.5);
+      return p.color;
+    }
+
+    function visiblePoints() {
+      return state.data.points.filter(p => {
+        if (gtClass(p) == null) return false; // labeled only
+        if (state.hidden.has(p.city_id)) return false;
+        if (state.focusCity && p.city_id !== state.focusCity) return false;
+        if (state.countryFilter !== 'all' && pointCountry(p) !== state.countryFilter) return false;
+        return true;
+      });
+    }
+
+    function browsePoints() {
+      let pts = visiblePoints();
+      if (state.browseFilter === 'res') pts = pts.filter(p => gtClass(p) === 'res');
+      else if (state.browseFilter === 'nres') pts = pts.filter(p => gtClass(p) === 'nres');
+      else if (state.browseFilter === 'wrong') pts = pts.filter(p => p.correct === false);
+      else if (state.browseFilter === 'correct') pts = pts.filter(p => p.correct === true);
+      return pts.slice().sort((a, b) =>
+        a.city_id === b.city_id ? a.id - b.id : a.city_id.localeCompare(b.city_id)
+      );
+    }
+
+    function updateBrowseStatus() {
+      const list = browsePoints();
+      const el = document.getElementById('browse-status');
+      if (!list.length) {
+        el.innerHTML = 'Browse: <b>0</b> pixels in filter';
+        return;
+      }
+      const i = Math.max(0, Math.min(state.browseIndex, list.length - 1));
+      const p = list[i];
+      const gt = nameOf(gtClass(p));
+      const pr = nameOf(predClass(p));
+      const mark = p.correct === true ? '✓' : p.correct === false ? '✗' : '?';
+      el.innerHTML =
+        `Browse <b>${i + 1}</b> / ${list.length}` +
+        ` · GT <b>${gt}</b> · pred <b>${pr}</b> ${mark}` +
+        (p ? ` · ${p.city_name}` : '');
+    }
+
+    function selectBrowseIndex(i, { fly = true } = {}) {
+      const list = browsePoints();
+      if (!list.length) {
+        state.browseIndex = -1;
+        updateBrowseStatus();
+        return;
+      }
+      const n = list.length;
+      state.browseIndex = ((i % n) + n) % n;
+      const p = list[state.browseIndex];
+      showDetail(p);
+      updateBrowseStatus();
+      if (state.umap) state.umap.setSelection(p);
+      if (fly && state.mode === 'umap' && state.umap) {
+        // Soft frame around selected point without losing cluster context
+        state.umap.focusPoint(p);
+      }
+      if (fly && state.mode === 'globe' && state.globe) {
+        state.globe.pointOfView({ lat: p.lat, lng: p.lon, altitude: 0.35 }, 600);
+      }
+    }
+
+    function stepBrowse(delta) {
+      const list = browsePoints();
+      if (!list.length) return;
+      let i = state.browseIndex;
+      if (i < 0 && state.selected) {
+        i = list.findIndex(p => p.id === state.selected.id);
+      }
+      if (i < 0) i = delta > 0 ? -1 : 0;
+      selectBrowseIndex(i + delta);
+    }
+
+    function setBrowseFilter(filter, { keepSelection = true } = {}) {
+      state.browseFilter = filter;
+      const sel = document.getElementById('browse-filter');
+      if (sel && sel.value !== filter) sel.value = filter;
+      // Prefer staying on same pixel if still in list; else start at 0
+      const list = browsePoints();
+      let i = 0;
+      if (keepSelection && state.selected) {
+        const found = list.findIndex(p => p.id === state.selected.id);
+        if (found >= 0) i = found;
+      }
+      if (list.length) selectBrowseIndex(i, { fly: true });
+      else updateBrowseStatus();
+    }
+
+    function cityPoints(cityId) {
+      return state.data.points.filter(p => p.city_id === cityId);
+    }
+
+    function clusterStats(pts) {
+      if (!pts.length) return null;
+      let cx = 0, cy = 0, cz = 0;
+      for (const p of pts) { cx += p.ux; cy += p.uy; cz += p.uz; }
+      cx /= pts.length; cy /= pts.length; cz /= pts.length;
+      let r2 = 0;
+      for (const p of pts) {
+        const dx = p.ux - cx, dy = p.uy - cy, dz = p.uz - cz;
+        r2 = Math.max(r2, dx*dx + dy*dy + dz*dz);
+      }
+      return { cx, cy, cz, radius: Math.sqrt(r2) || 0.15 };
+    }
+
+    function showDetail(p) {
+      state.selected = p;
+      const list = browsePoints();
+      const idx = list.findIndex(x => x.id === p.id);
+      if (idx >= 0) state.browseIndex = idx;
+      document.getElementById('detail').classList.add('open');
+      document.getElementById('detail-empty').style.display = 'none';
+      document.getElementById('detail-body').style.display = 'block';
+      document.getElementById('d-title').textContent = p.city_name;
+      document.getElementById('d-sub').textContent = `${p.city_id} · cell ${p.id}`;
+
+      const gt = gtClass(p);
+      const pr = predClass(p);
+      const gtBox = document.getElementById('d-gt-box');
+      const predBox = document.getElementById('d-pred-box');
+      gtBox.className = `box ${gt || ''}`;
+      predBox.className = `box ${pr || ''}`;
+      document.getElementById('d-gt').textContent = nameOf(gt);
+      document.getElementById('d-pred').textContent = nameOf(pr);
+
+      const match = document.getElementById('d-match');
+      if (p.correct === true) {
+        match.className = 'match-pill ok';
+        match.textContent = 'match · prediction agrees with GT';
+      } else if (p.correct === false) {
+        match.className = 'match-pill bad';
+        match.textContent = 'mismatch · prediction disagrees with GT';
+      } else {
+        match.className = 'match-pill';
+        match.textContent = 'no prediction';
+      }
+
+      const kv = document.getElementById('d-kv');
+      const pRes = p.proba_res == null ? null : Number(p.proba_res);
+      const pNres = pRes == null ? null : 1 - pRes;
+      const pathP = p.path_proba_res == null ? null : Number(p.path_proba_res);
+      const rows = [
+        ['lon, lat', `${p.lon.toFixed(5)}, ${p.lat.toFixed(5)}`],
+        ['model', 'week4 baseline_lr (res vs non-res)'],
+        ['week4 fold', p.week4_region || '—'],
+        ['NN P(res)', pRes == null ? '—' : pRes.toFixed(3)],
+        ['NN P(nres)', pNres == null ? '—' : pNres.toFixed(3)],
+        ...(pathP == null ? [] : [['path P(res)', pathP.toFixed(3) + ' · blue curve']]),
+        ['PLS xyz', `${Number(p.ux).toFixed(2)}, ${Number(p.uy).toFixed(2)}, ${Number(p.uz).toFixed(2)}`],
+      ];
+      kv.innerHTML = rows.map(([k,v]) => `<span>${k}</span><span>${v}</span>`).join('');
+      const patch = document.getElementById('d-patch');
+      const ctx = document.getElementById('d-context');
+      const ctx500 = document.getElementById('d-context500');
+      const ctx500Wrap = document.getElementById('d-context500-wrap');
+      patch.style.display = p.patch ? 'block' : 'none';
+      ctx.style.display = p.context ? 'block' : 'none';
+      ctx500Wrap.style.display = p.context500 ? 'block' : 'none';
+      if (p.patch) patch.src = `data/${p.patch}?v=10m50m500`;
+      if (p.context) ctx.src = `data/${p.context}?v=10m50m500`;
+      if (p.context500) ctx500.src = `data/${p.context500}?v=bbox50`;
+      if (state.umap) state.umap.setSelection(p);
+      updateBrowseStatus();
+      requestAnimationFrame(() => {
+        if (state.globe) {
+          const el = document.getElementById('globe');
+          state.globe.width(el.clientWidth);
+          state.globe.height(el.clientHeight);
+        }
+        if (state.umap) state.umap.layout();
+      });
+    }
+
+    function updateFocusBanner() {
+      const banner = document.getElementById('focus-banner');
+      if (!state.focusCity) {
+        banner.classList.remove('show');
+        return;
+      }
+      const c = state.data.cities.find(x => x.city_id === state.focusCity);
+      document.getElementById('focus-text').textContent =
+        `Zoomed to ${c?.city_name || state.focusCity} embedding cluster`;
+      banner.classList.add('show');
+    }
+
+    function zoomToCity(cityId) {
+      state.focusCity = cityId;
+      updateFocusBanner();
+      buildLegend();
+      refresh();
+
+      const pts = cityPoints(cityId);
+      if (state.mode === 'umap' && state.umap) {
+        state.umap.fitPoints(pts, 0.9);
+      }
+      if (state.mode === 'globe' && state.globe && pts.length) {
+        const lat = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
+        const lng = pts.reduce((s, p) => s + p.lon, 0) / pts.length;
+        state.globe.pointOfView({ lat, lng, altitude: 0.55 }, 900);
+      }
+    }
+
+    function clearFocus(fit = true) {
+      state.focusCity = null;
+      updateFocusBanner();
+      buildLegend();
+      refresh();
+      if (fit && state.mode === 'umap' && state.umap) {
+        state.umap.fitPoints(visiblePoints(), 1.15);
+      }
+      if (fit && state.mode === 'globe' && state.globe) {
+        state.globe.pointOfView({ lat: 37.5, lng: -98, altitude: 1.8 }, 900);
+      }
+    }
+
+    function buildLegend() {
+      const el = document.getElementById('legend');
+      el.innerHTML = '';
+      const cities = state.data.cities.filter(c => {
+        const cc = c.country || String(c.city_id).split('_')[0];
+        return state.countryFilter === 'all' || cc === state.countryFilter;
+      });
+      for (const c of cities) {
+        const cc = c.country || String(c.city_id).split('_')[0];
+        const row = document.createElement('div');
+        row.className = 'legend-item'
+          + (state.hidden.has(c.city_id) ? ' off' : '')
+          + (state.focusCity === c.city_id ? ' focused' : '');
+        row.innerHTML = `
+          <span class="swatch" style="background:${c.color}"></span>
+          <span class="name">${c.city_name} <span class="meta">(${cc} · ${c.n})</span></span>
+          <button class="zoom-city" type="button" data-city="${c.city_id}">Zoom</button>`;
+        row.querySelector('.name').onclick = () => {
+          if (state.hidden.has(c.city_id)) state.hidden.delete(c.city_id);
+          else state.hidden.add(c.city_id);
+          if (state.focusCity === c.city_id) state.focusCity = null;
+          updateFocusBanner();
+          refresh();
+          buildLegend();
+        };
+        row.querySelector('.zoom-city').onclick = (ev) => {
+          ev.stopPropagation();
+          state.hidden.delete(c.city_id);
+          zoomToCity(c.city_id);
+        };
+        el.appendChild(row);
+      }
+    }
+
+    function initGlobe() {
+      const el = document.getElementById('globe');
+      const g = Globe()(el)
+        .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+        .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
+        .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
+        .showAtmosphere(true)
+        .atmosphereColor('#6ea8fe')
+        .atmosphereAltitude(0.12)
+        .pointsData([])
+        .pointAltitude(0.012)
+        .pointRadius(0.28)
+        .pointColor(d => pointColor(d))
+        .pointsMerge(false)
+        .onPointClick(p => showDetail(p));
+      g.controls().autoRotate = false;
+      g.pointOfView({ lat: 37.5, lng: -98, altitude: 1.8 }, 0);
+      const ro = new ResizeObserver(() => {
+        g.width(el.clientWidth);
+        g.height(el.clientHeight);
+      });
+      ro.observe(el);
+      g.width(el.clientWidth);
+      g.height(el.clientHeight);
+      setTimeout(() => {
+        g.width(el.clientWidth);
+        g.height(el.clientHeight);
+      }, 100);
+      state.globe = g;
+    }
+
+    function initUmap() {
+      const el = document.getElementById('umap');
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0b1020);
+      scene.fog = new THREE.FogExp2(0x0b1020, 0.08);
+
+      const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 50);
+      camera.position.set(2.2, 1.4, 2.2);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      el.appendChild(renderer.domElement);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.enableZoom = true;
+      controls.zoomSpeed = 2.8;          // snappier scroll / pinch
+      controls.rotateSpeed = 0.9;
+      controls.panSpeed = 1.1;
+      controls.minDistance = 0.08;
+      controls.maxDistance = 28;
+      controls.target.set(0, 0, 0);
+
+      function dollyBy(factor) {
+        const offset = camera.position.clone().sub(controls.target);
+        const dist = offset.length();
+        const next = Math.min(controls.maxDistance, Math.max(controls.minDistance, dist * factor));
+        offset.setLength(next);
+        camera.position.copy(controls.target).add(offset);
+        controls.update();
+      }
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+      const key = new THREE.DirectionalLight(0xffffff, 0.45);
+      key.position.set(3, 4, 2);
+      scene.add(key);
+
+      // UMAP axes through origin in + and − directions
+      const axisLen = 1.45;
+      const axesGroup = new THREE.Group();
+      axesGroup.name = 'umap-axes';
+      const axisSpecs = [
+        { dir: [1, 0, 0], color: 0xff5c5c, label: '+X · PLS-1', negLabel: '−X' },
+        { dir: [0, 1, 0], color: 0x5ad67d, label: '+Y · PLS-2', negLabel: '−Y' },
+        { dir: [0, 0, 1], color: 0x6ea8fe, label: '+Z · PLS-3', negLabel: '−Z' },
+      ];
+      function makeAxisLabel(text, color, dim = false) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 320;
+        canvas.height = 72;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.font = '700 32px "IBM Plex Sans", "Segoe UI", sans-serif';
+        ctx.globalAlpha = dim ? 0.7 : 1;
+        ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = 'rgba(0,0,0,0.9)';
+        ctx.shadowBlur = 8;
+        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.needsUpdate = true;
+        const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+        const sprite = new THREE.Sprite(mat);
+        sprite.scale.set(dim ? 0.38 : 0.55, dim ? 0.086 : 0.124, 1);
+        return sprite;
+      }
+      // Cone/cylinder default axis is +Y
+      const yUp = new THREE.Vector3(0, 1, 0);
+      const xAxis = new THREE.Vector3(1, 0, 0);
+      function alignTo(mesh, dirVec) {
+        const d = dirVec.clone().normalize();
+        // setFromUnitVectors is unstable for anti-parallel (+Y vs −Y)
+        if (d.y > 0.999) {
+          mesh.quaternion.identity();
+        } else if (d.y < -0.999) {
+          mesh.quaternion.setFromAxisAngle(xAxis, Math.PI);
+        } else {
+          mesh.quaternion.setFromUnitVectors(yUp, d);
+        }
+      }
+      for (const ax of axisSpecs) {
+        const posDir = new THREE.Vector3(ax.dir[0], ax.dir[1], ax.dir[2]);
+        const negDir = posDir.clone().negate();
+        const posEnd = posDir.clone().multiplyScalar(axisLen);
+        const negEnd = negDir.clone().multiplyScalar(axisLen);
+
+        // Full-length shaft through origin
+        const tube = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.008, 0.008, axisLen * 2, 8),
+          new THREE.MeshBasicMaterial({ color: ax.color, transparent: true, opacity: 0.92 })
+        );
+        alignTo(tube, posDir);
+        axesGroup.add(tube);
+
+        // + tip
+        const conePos = new THREE.Mesh(
+          new THREE.ConeGeometry(0.034, 0.1, 12),
+          new THREE.MeshBasicMaterial({ color: ax.color })
+        );
+        conePos.position.copy(posEnd);
+        alignTo(conePos, posDir);
+        axesGroup.add(conePos);
+        const labelPos = makeAxisLabel(ax.label, ax.color, false);
+        labelPos.position.copy(posEnd).addScaledVector(posDir, 0.16);
+        axesGroup.add(labelPos);
+
+        // − tip
+        const coneNeg = new THREE.Mesh(
+          new THREE.ConeGeometry(0.028, 0.085, 12),
+          new THREE.MeshBasicMaterial({ color: ax.color, transparent: true, opacity: 0.75 })
+        );
+        coneNeg.position.copy(negEnd);
+        alignTo(coneNeg, negDir);
+        axesGroup.add(coneNeg);
+        const labelNeg = makeAxisLabel(ax.negLabel, ax.color, true);
+        labelNeg.position.copy(negEnd).addScaledVector(negDir, 0.16);
+        axesGroup.add(labelNeg);
+      }
+      axesGroup.add(new THREE.Mesh(
+        new THREE.SphereGeometry(0.022, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0xe2e8f0 })
+      ));
+      const grid = new THREE.GridHelper(2.8, 14, 0x334155, 0x1e293b);
+      const gridMats = Array.isArray(grid.material) ? grid.material : [grid.material];
+      for (const m of gridMats) {
+        m.transparent = true;
+        m.opacity = 0.4;
+      }
+      axesGroup.add(grid);
+      scene.add(axesGroup);
+
+      const pointsGroup = new THREE.Group();
+      scene.add(pointsGroup);
+
+      // Selection marker (easier than clicking tiny points)
+      const selectMarker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      selectMarker.visible = false;
+      scene.add(selectMarker);
+      const selectRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.05, 0.07, 24),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide, transparent: true, opacity: 0.85 })
+      );
+      selectRing.visible = false;
+      scene.add(selectRing);
+
+      const raycaster = new THREE.Raycaster();
+      raycaster.params.Points = { threshold: 0.045 };
+      const pointer = new THREE.Vector2();
+      let pointsObj = null;
+
+      function layout() {
+        renderer.setSize(el.clientWidth, el.clientHeight);
+        camera.aspect = el.clientWidth / Math.max(1, el.clientHeight);
+        camera.updateProjectionMatrix();
+      }
+      new ResizeObserver(layout).observe(el);
+      layout();
+
+      function setSelection(p) {
+        if (!p) {
+          selectMarker.visible = false;
+          selectRing.visible = false;
+          return;
+        }
+        selectMarker.position.set(p.ux, p.uy, p.uz);
+        selectRing.position.set(p.ux, p.uy, p.uz);
+        selectRing.lookAt(camera.position);
+        selectMarker.visible = true;
+        selectRing.visible = true;
+      }
+
+      function focusPoint(p) {
+        if (!p) return;
+        controls.target.set(p.ux, p.uy, p.uz);
+        const cur = camera.position.clone().sub(controls.target);
+        const dist = Math.max(0.45, Math.min(1.8, cur.length() || 1.0));
+        const dir = cur.length() > 1e-6 ? cur.normalize() : new THREE.Vector3(1.1, 0.75, 1.0).normalize();
+        camera.position.set(
+          p.ux + dir.x * dist,
+          p.uy + dir.y * dist,
+          p.uz + dir.z * dist,
+        );
+        controls.update();
+        setSelection(p);
+      }
+
+      function rebuild() {
+        while (pointsGroup.children.length) pointsGroup.remove(pointsGroup.children[0]);
+        const pts = visiblePoints();
+        if (!pts.length) {
+          pointsObj = null;
+          return;
+        }
+        const geo = new THREE.BufferGeometry();
+        const pos = new Float32Array(pts.length * 3);
+        const col = new Float32Array(pts.length * 3);
+        const tmp = new THREE.Color();
+        pts.forEach((p, i) => {
+          pos[i*3] = p.ux; pos[i*3+1] = p.uy; pos[i*3+2] = p.uz;
+          tmp.set(pointColor(p));
+          col[i*3] = tmp.r; col[i*3+1] = tmp.g; col[i*3+2] = tmp.b;
+        });
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        const size = state.focusCity ? 0.07 : 0.05;
+        const mat = new THREE.PointsMaterial({
+          size,
+          vertexColors: true,
+          sizeAttenuation: true,
+          transparent: true,
+          opacity: 0.95,
+          depthWrite: true,
+        });
+        pointsObj = new THREE.Points(geo, mat);
+        pointsObj.userData.pts = pts;
+        pointsGroup.add(pointsObj);
+        if (state.selected) setSelection(state.selected);
+      }
+
+      function fitPoints(pts, pad = 1.1) {
+        const stats = clusterStats(pts);
+        if (!stats) return;
+        const { cx, cy, cz, radius } = stats;
+        controls.target.set(cx, cy, cz);
+        const dist = Math.max(0.35, radius * 3.2 * pad);
+        const dir = new THREE.Vector3(1.1, 0.75, 1.0).normalize();
+        camera.position.set(cx + dir.x * dist, cy + dir.y * dist, cz + dir.z * dist);
+        controls.update();
+      }
+
+      el.addEventListener('pointerdown', (ev) => {
+        if (!pointsObj) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        const hits = raycaster.intersectObject(pointsObj);
+        if (hits.length) showDetail(pointsObj.userData.pts[hits[0].index]);
+      });
+
+      function animate() {
+        requestAnimationFrame(animate);
+        if (selectRing.visible) selectRing.lookAt(camera.position);
+        controls.update();
+        renderer.render(scene, camera);
+      }
+      animate();
+      state.umap = { rebuild, layout, fitPoints, focusPoint, setSelection, dollyBy, controls, camera };
+    }
+
+    function refresh() {
+      const pts = visiblePoints().map(p => ({ ...p, color: pointColor(p) }));
+      if (state.globe) {
+        state.globe.pointsData(pts).pointColor(d => pointColor(d));
+      }
+      if (state.umap) state.umap.rebuild();
+      const focusNote = state.focusCity
+        ? `<br/>focus: <b>${state.data.cities.find(c => c.city_id === state.focusCity)?.city_name || state.focusCity}</b>`
+        : '';
+      const pred = state.data.prediction || {};
+      const method = pred.method || 'LORO LR';
+      const countries = (state.data.countries || []).join('+') || 'USA';
+      const predNote = pred.accuracy != null
+        ? `<br/>${method} · acc <b>${(100 * pred.accuracy).toFixed(1)}%</b>` +
+          (pred.macro_f1 != null ? ` · macro-F1 <b>${pred.macro_f1.toFixed(3)}</b>` : '') +
+          (pred.n_scored != null ? ` · scored <b>${pred.n_scored}</b>` : '')
+        : '';
+      document.getElementById('stats').innerHTML =
+        `<b>${pts.length}</b> / ${state.data.n_points} labeled points visible` +
+        ` · <b>${countries}</b>${focusNote}${predNote}<br/>` +
+        `PLS-DA dims 1–3 · ${state.data.imagery}`;
+
+      const cl = document.getElementById('color-legend');
+      if (state.colorMode === 'gt') {
+        const counts = { res: 0, nres: 0 };
+        for (const p of pts) counts[gtClass(p)] = (counts[gtClass(p)] || 0) + 1;
+        cl.innerHTML = GT_LEGEND.map(x =>
+          `<div class="legend-item"><span class="swatch" style="background:${x.color}"></span>${x.name} <span class="meta">(${counts[x.key] || 0})</span></div>`
+        ).join('');
+      } else if (state.colorMode === 'pred') {
+        const counts = { res: 0, nres: 0 };
+        for (const p of pts) {
+          const k = predClass(p);
+          if (k) counts[k] += 1;
+        }
+        cl.innerHTML = PRED_LEGEND.map(x =>
+          `<div class="legend-item"><span class="swatch" style="background:${x.color}"></span>${x.name} <span class="meta">(${counts[x.key] || 0})</span></div>`
+        ).join('');
+      } else if (state.colorMode === 'correct') {
+        const counts = { ok: 0, bad: 0 };
+        for (const p of pts) {
+          if (p.correct === true) counts.ok += 1;
+          else if (p.correct === false) counts.bad += 1;
+        }
+        cl.innerHTML = CORRECT_LEGEND.map(x =>
+          `<div class="legend-item"><span class="swatch" style="background:${x.color}"></span>${x.name} <span class="meta">(${counts[x.key]})</span></div>`
+        ).join('');
+      } else if (state.colorMode === 'country') {
+        const counts = { USA: 0, IND: 0, JPN: 0 };
+        for (const p of pts) {
+          const k = pointCountry(p);
+          if (k in counts) counts[k] += 1;
+        }
+        cl.innerHTML = ['USA', 'IND', 'JPN'].map(k =>
+          `<div class="legend-item"><span class="swatch" style="background:${COUNTRY_COLOR[k]}"></span>${k} <span class="meta">(${counts[k]})</span></div>`
+        ).join('');
+      } else {
+        cl.innerHTML = '';
+      }
+      updateBrowseStatus();
+    }
+
+    function okWalks() {
+      if (!state.walks || !state.walks.cities) return [];
+      return state.walks.cities.filter(c => {
+        if (!(c.status === 'ok' && c.frames && c.frames.length)) return false;
+        const cc = c.country || String(c.city_id).split('_')[0];
+        return state.countryFilter === 'all' || cc === state.countryFilter;
+      });
+    }
+
+    function currentWalk() {
+      const list = okWalks();
+      if (!list.length) return null;
+      return list.find(c => c.city_id === state.walkCity) || list[0];
+    }
+
+    function pointById(id) {
+      return state.data.points.find(p => p.id === id) || null;
+    }
+
+    function frameAsPoint(fr) {
+      const base = pointById(fr.nn_cell_id) || {};
+      // Detail panel is the NN cell. Do not overwrite its P(res) with the
+      // synthetic 64-D path score (that is fr.proba_res / blue curve).
+      const nnProba = fr.nn_proba_res != null
+        ? Number(fr.nn_proba_res)
+        : (base.proba_res != null ? Number(base.proba_res) : null);
+      return {
+        ...base,
+        id: fr.nn_cell_id,
+        gt: fr.gt != null ? fr.gt : base.gt,
+        pred: fr.pred != null ? fr.pred : base.pred,
+        correct: fr.correct != null ? fr.correct : base.correct,
+        proba_res: nnProba,
+        pred_frac_res: nnProba,
+        pred_frac_nres: nnProba == null ? null : 1 - nnProba,
+        path_proba_res: fr.proba_res,
+        purity: fr.purity != null ? fr.purity : base.purity,
+        patch: fr.patch || base.patch,
+        context: fr.context || base.context,
+        context500: fr.context500 || base.context500,
+        lon: fr.lon ?? base.lon,
+        lat: fr.lat ?? base.lat,
+        city_name: base.city_name || currentWalk()?.city_name,
+        city_id: base.city_id || currentWalk()?.city_id,
+        ux: base.ux,
+        uy: base.uy,
+        uz: base.uz,
+        pred_model: 'week4_baseline_lr_loro',
+        week4_region: currentWalk()?.week4_region,
+      };
+    }
+
+    function drawWalkChart(walk) {
+      const canvas = document.getElementById('walk-chart');
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#0e1528';
+      ctx.fillRect(0, 0, w, h);
+      const frames = walk.frames;
+      const pad = { l: 42, r: 16, t: 16, b: 28 };
+      const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+      // grid
+      ctx.strokeStyle = '#24304d';
+      ctx.lineWidth = 1;
+      for (const yv of [0, 0.5, 1]) {
+        const y = pad.t + ph * (1 - yv);
+        ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + pw, y); ctx.stroke();
+        ctx.fillStyle = '#93a0bd';
+        ctx.font = '11px IBM Plex Sans, sans-serif';
+        ctx.fillText(yv.toFixed(1), 8, y + 4);
+      }
+      ctx.fillText('P(res)', 8, 12);
+      ctx.fillText('res → nres', pad.l + pw - 70, h - 8);
+      // model curve
+      ctx.strokeStyle = '#6ea8fe';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      frames.forEach((fr, i) => {
+        const x = pad.l + pw * (frames.length === 1 ? 0 : i / (frames.length - 1));
+        const y = pad.t + ph * (1 - fr.proba_res);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      // NN stored proba dashed
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = '#5ad67d';
+      ctx.beginPath();
+      let started = false;
+      frames.forEach((fr, i) => {
+        if (fr.nn_proba_res == null) return;
+        const x = pad.l + pw * (frames.length === 1 ? 0 : i / (frames.length - 1));
+        const y = pad.t + ph * (1 - fr.nn_proba_res);
+        if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+      });
+      if (started) ctx.stroke();
+      ctx.setLineDash([]);
+      // active marker
+      const fi = Math.max(0, Math.min(state.walkFrame, frames.length - 1));
+      const ax = pad.l + pw * (frames.length === 1 ? 0 : fi / (frames.length - 1));
+      const ay = pad.t + ph * (1 - frames[fi].proba_res);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(ax, ay, 4, 0, Math.PI * 2); ctx.fill();
+      // legend
+      ctx.fillStyle = '#6ea8fe'; ctx.fillRect(pad.l, h - 18, 10, 3);
+      ctx.fillStyle = '#93a0bd'; ctx.font = '10px IBM Plex Sans, sans-serif';
+      ctx.fillText('model path', pad.l + 14, h - 10);
+      ctx.fillStyle = '#5ad67d'; ctx.fillRect(pad.l + 100, h - 18, 10, 3);
+      ctx.fillStyle = '#93a0bd'; ctx.fillText('NN cell P(res)', pad.l + 114, h - 10);
+    }
+
+    function renderWalk() {
+      const walk = currentWalk();
+      const strip = document.getElementById('walk-strip');
+      const status = document.getElementById('walk-status');
+      if (!walk) {
+        strip.innerHTML = '';
+        status.textContent = 'No boundary walks yet — run build_boundary_walks.py';
+        return;
+      }
+      state.walkCity = walk.city_id;
+      document.getElementById('walk-title').textContent =
+        `Boundary walk · ${walk.city_name}`;
+      const sel = document.getElementById('walk-city');
+      if (sel.value !== walk.city_id) sel.value = walk.city_id;
+
+      const frames = walk.frames;
+      state.walkFrame = Math.max(0, Math.min(state.walkFrame, frames.length - 1));
+      strip.innerHTML = frames.map((fr, i) => {
+        const gt = fr.gt === 1 ? 'res' : fr.gt === 0 ? 'nres' : '?';
+        const src = fr.patch ? `data/${fr.patch}?v=walk1` : '';
+        const nnP = fr.nn_proba_res == null ? '—' : fr.nn_proba_res.toFixed(3);
+        return `<div class="walk-frame${i === state.walkFrame ? ' active' : ''}" data-i="${i}">
+          <img src="${src}" alt="step ${i}" />
+          <div class="cap">
+            <b>${i + 1}/${frames.length}</b> · t=${fr.t.toFixed(2)}<br/>
+            path <b>${fr.proba_res.toFixed(3)}</b> · NN ${nnP}<br/>
+            GT ${gt} · d=${fr.nn_dist.toFixed(3)}
+          </div>
+        </div>`;
+      }).join('');
+      strip.querySelectorAll('.walk-frame').forEach(el => {
+        el.onclick = () => selectWalkFrame(Number(el.dataset.i));
+      });
+      drawWalkChart(walk);
+      const fr = frames[state.walkFrame];
+      const nnP = fr.nn_proba_res == null ? '—' : fr.nn_proba_res.toFixed(3);
+      status.innerHTML =
+        `Frame <b>${state.walkFrame + 1}</b> / ${frames.length}` +
+        ` · path P(res)=<b>${fr.proba_res.toFixed(3)}</b>` +
+        ` · NN P(res)=<b>${nnP}</b>` +
+        ` · hi-conf endpoints res=${walk.n_hi_res} nres=${walk.n_hi_nres}` +
+        ` · cell ${fr.nn_cell_id}`;
+      showDetail(frameAsPoint(fr));
+    }
+
+    function selectWalkFrame(i) {
+      const walk = currentWalk();
+      if (!walk) return;
+      const n = walk.frames.length;
+      state.walkFrame = ((i % n) + n) % n;
+      renderWalk();
+    }
+
+    function stepWalk(delta) {
+      selectWalkFrame(state.walkFrame + delta);
+    }
+
+    function populateWalkCities() {
+      const sel = document.getElementById('walk-city');
+      const list = okWalks();
+      sel.innerHTML = list.map(c =>
+        `<option value="${c.city_id}">${c.city_name} (${c.n_hi_res}/${c.n_hi_nres})</option>`
+      ).join('');
+      if (list.length && !state.walkCity) state.walkCity = list[0].city_id;
+    }
+
+    function setMode(mode) {
+      state.mode = mode;
+      const isWalk = mode === 'walk';
+      document.getElementById('btn-globe').classList.toggle('active', mode === 'globe');
+      document.getElementById('btn-umap').classList.toggle('active', mode === 'umap');
+      document.getElementById('btn-walk').classList.toggle('active', isWalk);
+      document.getElementById('globe').style.display = mode === 'globe' ? 'block' : 'none';
+      document.getElementById('umap').style.display = mode === 'umap' ? 'block' : 'none';
+      document.getElementById('walk').style.display = isWalk ? 'block' : 'none';
+      document.getElementById('axis-legend').classList.toggle('show', mode === 'umap');
+      document.getElementById('zoom-controls').classList.toggle('show', mode === 'umap');
+      document.getElementById('hint').style.display = isWalk ? 'none' : 'block';
+
+      for (const id of ['row-color', 'row-fit', 'row-browse', 'row-browse-btns', 'legend-caption', 'legend', 'color-legend']) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = isWalk ? 'none' : '';
+      }
+      // Country filter stays available in all modes (including boundary walk).
+      document.getElementById('row-country').style.display = 'flex';
+      document.getElementById('walk-method').style.display = isWalk ? 'block' : 'none';
+      document.getElementById('row-walk-city').style.display = isWalk ? 'flex' : 'none';
+      document.getElementById('row-walk-btns').style.display = isWalk ? 'flex' : 'none';
+      document.getElementById('browse-status').style.display = isWalk ? 'none' : '';
+
+      if (mode === 'umap' && state.umap) {
+        state.umap.layout();
+        state.umap.fitPoints(visiblePoints(), state.focusCity ? 0.9 : 1.15);
+      }
+      if (mode === 'globe' && state.focusCity) zoomToCity(state.focusCity);
+      if (isWalk) {
+        populateWalkCities();
+        renderWalk();
+        document.getElementById('stats').innerHTML =
+          state.walks
+            ? `<b>${okWalks().length}</b> / ${state.walks.n_cities || 0} city walks ready`
+            : 'Boundary walks not built yet';
+      } else {
+        refresh();
+      }
+    }
+
+    document.getElementById('btn-globe').onclick = () => setMode('globe');
+    document.getElementById('btn-umap').onclick = () => setMode('umap');
+    document.getElementById('btn-walk').onclick = () => setMode('walk');
+    document.getElementById('btn-fit-all').onclick = () => clearFocus(true);
+    document.getElementById('btn-clear-focus').onclick = () => clearFocus(true);
+    document.getElementById('focus-clear').onclick = () => clearFocus(true);
+    document.getElementById('btn-prev').onclick = () => stepBrowse(-1);
+    document.getElementById('btn-next').onclick = () => stepBrowse(1);
+    document.getElementById('btn-walk-prev').onclick = () => stepWalk(-1);
+    document.getElementById('btn-walk-next').onclick = () => stepWalk(1);
+    document.getElementById('walk-city').onchange = (e) => {
+      state.walkCity = e.target.value;
+      state.walkFrame = 0;
+      renderWalk();
+    };
+    document.getElementById('browse-filter').onchange = (e) => {
+      setBrowseFilter(e.target.value);
+    };
+    document.getElementById('detail-close').onclick = () => {
+      document.getElementById('detail').classList.remove('open');
+    };
+    document.getElementById('btn-zoom-in').onclick = () => {
+      if (state.umap) state.umap.dollyBy(0.72);
+    };
+    document.getElementById('btn-zoom-out').onclick = () => {
+      if (state.umap) state.umap.dollyBy(1.38);
+    };
+
+    document.getElementById('color-mode').onchange = (e) => {
+      state.colorMode = e.target.value;
+      refresh();
+    };
+    document.getElementById('country-filter').onchange = (e) => {
+      state.countryFilter = e.target.value;
+      state.focusCity = null;
+      updateFocusBanner();
+      buildLegend();
+      if (state.mode === 'walk') {
+        state.walkCity = null;
+        state.walkFrame = 0;
+        populateWalkCities();
+        renderWalk();
+        document.getElementById('stats').innerHTML =
+          state.walks
+            ? `<b>${okWalks().length}</b> city walks in filter`
+            : 'Boundary walks not built yet';
+      } else {
+        refresh();
+        if (state.umap) state.umap.fitPoints(visiblePoints(), 1.15);
+        setBrowseFilter(state.browseFilter, { keepSelection: false });
+      }
+    };
+
+    window.addEventListener('keydown', (ev) => {
+      const tag = (ev.target && ev.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (ev.key === 'ArrowRight' || ev.key === 'ArrowDown') {
+        ev.preventDefault();
+        if (state.mode === 'walk') stepWalk(1); else stepBrowse(1);
+      } else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        if (state.mode === 'walk') stepWalk(-1); else stepBrowse(-1);
+      } else if (state.mode !== 'walk' && (ev.key === 'r' || ev.key === 'R')) {
+        setBrowseFilter('res');
+      } else if (state.mode !== 'walk' && (ev.key === 'n' || ev.key === 'N')) {
+        setBrowseFilter('nres');
+      } else if (state.mode !== 'walk' && (ev.key === 'w' || ev.key === 'W')) {
+        setBrowseFilter('wrong');
+      } else if (state.mode !== 'walk' && (ev.key === 'a' || ev.key === 'A')) {
+        setBrowseFilter('all');
+      } else if ((ev.key === '+' || ev.key === '=') && state.mode === 'umap' && state.umap) {
+        ev.preventDefault();
+        state.umap.dollyBy(0.72);
+      } else if ((ev.key === '-' || ev.key === '_') && state.mode === 'umap' && state.umap) {
+        ev.preventDefault();
+        state.umap.dollyBy(1.38);
+      }
+    });
+
+    const data = await fetch('data/points.json?v=pls500').then(r => r.json());
+    state.data = data;
+    try {
+      state.walks = await fetch('data/boundary_walks.json?v=1').then(r => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      });
+    } catch (_) {
+      state.walks = null;
+    }
+    document.getElementById('stats').textContent = 'Loading views…';
+    initGlobe();
+    initUmap();
+    buildLegend();
+    setMode('umap');
+    refresh();
+    state.umap.fitPoints(visiblePoints(), 1.15);
+    setBrowseFilter('all', { keepSelection: false });
+  </script>
+</body>
+</html>

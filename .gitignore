@@ -14,10 +14,41 @@ outputs/
 # Env / secrets
 .env
 .env.*
+!.env.example
+!**/.env.example
 *.json.key
 ee-credentials.json
 
-# OS / IDE
+# Local PostgreSQL / PostGIS runtime (Docker volume or micromamba)
+.tools/mamba/
+.tools/postgis/
+.tools/micromamba
+**/pgdata/
+**/*.dump
+**/*.sql.gz
+week4/international_geo_generalization/db/.env
+week4/international_geo_generalization/db/.runtime
+week4/international_geo_generalization/db/schema.sql.runtime.txt
+week4/international_geo_generalization/runs/
+week4/international_geo_generalization/outputs/
+
+# Large local artifacts (regenerate)
+.tools/
+data/
+datasets/
+meeting_audios/
+*.npy
+*.joblib
+week4/international_geo_generalization/viz/**/chips/
+week4/international_geo_generalization/viz/**/runs/
+week5/runs/
+cnn_vs_ghsl_macro_f1.png
+output.png
+
+# OS / IDE / agent caches
 .DS_Store
 .idea/
 .vscode/
+.agents/
+.codex/
+.slides/

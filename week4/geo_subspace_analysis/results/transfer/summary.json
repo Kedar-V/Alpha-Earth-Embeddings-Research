@@ -1,0 +1,16 @@
+{
+  "status": "completed",
+  "runtime_seconds": 241.76092410087585,
+  "metros": [
+    "Atlanta_SE",
+    "Boston_NE",
+    "Chicago_MW",
+    "Denver_W",
+    "Houston_S",
+    "LA_W",
+    "NYC_NE",
+    "Phoenix_SW",
+    "SF_W",
+    "Seattle_NW"
+  ]
+}

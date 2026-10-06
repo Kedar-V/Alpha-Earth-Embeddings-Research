@@ -1,0 +1,14 @@
+sampling 100 cells/city ...
+/data/users/kv133/Alpha-Earth-Embeddings-Research/week4/international_geo_generalization/scripts/export_usa_embedding_globe_sample.py:87: UserWarning: pandas only supports SQLAlchemy connectable (engine/connection) or database string URI or sqlite3 DBAPI2 connection. Other DBAPI2 objects are not tested. Please consider using SQLAlchemy.
+  df = pd.read_sql(sql, conn, params=(str(seed), int(n_per_city)))
+sampled 1000 cells across 1 cities
+Traceback (most recent call last):
+  File "/data/users/kv133/Alpha-Earth-Embeddings-Research/week4/international_geo_generalization/scripts/export_usa_embedding_globe_sample.py", line 307, in <module>
+    raise SystemExit(main())
+  File "/data/users/kv133/Alpha-Earth-Embeddings-Research/week4/international_geo_generalization/scripts/export_usa_embedding_globe_sample.py", line 215, in main
+    X = df[A_COLS].to_numpy(dtype=np.float64)
+  File "/home/kv133/Alpha-Earth-Embeddings-Research/.venv/lib/python3.10/site-packages/pandas/core/frame.py", line 2002, in to_numpy
+    result = self._mgr.as_array(dtype=dtype, copy=copy, na_value=na_value)
+  File "/home/kv133/Alpha-Earth-Embeddings-Research/.venv/lib/python3.10/site-packages/pandas/core/internals/managers.py", line 1705, in as_array
+    arr = np.asarray(blk.values, dtype=dtype)
+ValueError: could not convert string to float: 'a00'

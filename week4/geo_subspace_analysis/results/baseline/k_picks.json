@@ -1,0 +1,18 @@
+{
+  "baseline_macro_f1_mean": 0.7792012907325657,
+  "baseline_macro_f1_std": 0.08924846803949121,
+  "pca": {
+    "smallest_k_retention_ge_0.95": 15,
+    "smallest_k_within_0.01": 64,
+    "smallest_k_within_0.02": 64
+  },
+  "pls": {
+    "smallest_k_retention_ge_0.95": 4,
+    "smallest_k_within_0.01": 16,
+    "smallest_k_within_0.02": 9
+  },
+  "baseline_metro_bootstrap_mean_ci95": [
+    0.7290469390286368,
+    0.8316343616640415
+  ]
+}
