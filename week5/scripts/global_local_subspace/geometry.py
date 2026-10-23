@@ -246,7 +246,9 @@ def balance_cap_by_city(
     max_per_class: int | None,
     rng: np.random.Generator,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    if max_per_class is None:
+    # Non-positive cap: the extract is already the analysis set (DoU-balanced
+    # reruns pass 0 so this per-city draw cannot undo that balance).
+    if max_per_class is None or int(max_per_class) <= 0:
         return X, y, regions
     keep = []
     for city in np.unique(regions):

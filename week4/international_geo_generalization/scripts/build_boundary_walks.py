@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Build per-city PLS boundary walks for the embedding globe viewer.
 
-For each city:
+For each city × Degree-of-Urbanisation stratum (urban / peri_urban / rural):
   - centroid of high-conf correct res  (P(res) > 0.9)
   - centroid of high-conf correct nres (P(res) < 0.1)
-  - 12-step linear path in PLS-32 (NN retrieval) and 64-D (LORO LR P(res))
-  - nearest real patch per step from that city's viz sample
+  - 12-step linear path in PLS-32 (NN retrieval) and PLS-3 LR P(res)
+  - nearest real patch per step from that city×DoU corpus
 
-USA uses week4 fold joblibs; IND/JPN use intl extract LORO folds.
+Corpus = globe viz points ∪ DoU-balanced dashboard_points (DoU from
+cell_degree_of_urbanisation). Missing Esri chips for NN frames are fetched
+after the walks.
+
+USA/IND/JPN use intl extract LORO folds when present (PLS-3 LR).
 
 Observability (submit-job):
   viz/usa_embedding_globe/runs/boundary_<stamp>/
@@ -36,6 +40,8 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "viz" / "usa_embedding_globe"
 DATA = OUT / "data"
 POINTS = DATA / "points.json"
+DASH_POINTS = DATA / "dashboard_points.json"
+CHIPS = DATA / "chips"
 INTL_FOLD_DIR = DATA / "intl_folds"
 
 sys.path.insert(0, str(ROOT))
@@ -46,6 +52,7 @@ from export_usa_embedding_globe_sample import (  # noqa: E402
     CITY_TO_WEEK4_REGION,
     WEEK4_CKPT_DIR,
     atomic_json,
+    chip_job,
     connect,
     update_progress,
 )
@@ -59,6 +66,12 @@ HI_NRES = 0.1  # P(res) < this
 MID_RES = 0.7
 MID_NRES = 0.3
 WALK_PROBA_MODEL = "pls3_lr"  # path + endpoint P(res); NN still PLS-32
+DOU_ORDER = ("urban", "peri_urban", "rural")
+DOU_LABEL = {
+    "urban": "urban",
+    "peri_urban": "suburban",
+    "rural": "rural",
+}
 
 
 def sigmoid(x: np.ndarray) -> np.ndarray:
@@ -163,6 +176,148 @@ def load_embeddings(cell_ids: list[int]) -> dict[int, np.ndarray]:
     return out
 
 
+def attach_dou(points: list[dict]) -> dict[str, int]:
+    """Join GHS-SMOD DoU onto points in-place. Returns counts."""
+    need = [int(p["id"]) for p in points if not p.get("dou")]
+    counts = {d: 0 for d in DOU_ORDER}
+    counts["unknown"] = 0
+    if need:
+        with connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT cell_id, dou, smod_label
+                    FROM cell_degree_of_urbanisation
+                    WHERE cell_id = ANY(%s)
+                    """,
+                    (need,),
+                )
+                rows = {int(r["cell_id"]): r for r in cur.fetchall()}
+        for p in points:
+            if p.get("dou"):
+                continue
+            info = rows.get(int(p["id"]))
+            if info and info.get("dou"):
+                p["dou"] = info["dou"]
+                p["smod_label"] = info.get("smod_label")
+            else:
+                p["dou"] = None
+    for p in points:
+        d = p.get("dou")
+        if d in counts:
+            counts[d] += 1
+        else:
+            counts["unknown"] += 1
+    return counts
+
+
+def attach_chip_paths(points: list[dict]) -> None:
+    for p in points:
+        cid = int(p["id"])
+        patch = f"chips/{cid}_patch.jpg"
+        ctx = f"chips/{cid}_context.jpg"
+        ctx500 = f"chips/{cid}_context500.jpg"
+        if (CHIPS / f"{cid}_patch.jpg").exists():
+            p["patch"] = patch
+        if (CHIPS / f"{cid}_context.jpg").exists():
+            p["context"] = ctx
+        if (CHIPS / f"{cid}_context500.jpg").exists():
+            p["context500"] = ctx500
+
+
+def merge_points(*groups: list[dict]) -> list[dict]:
+    """Union by cell id; prefer records that already have patch paths / dou."""
+    by: dict[int, dict] = {}
+    for group in groups:
+        for p in group:
+            cid = int(p["id"])
+            prev = by.get(cid)
+            if prev is None:
+                by[cid] = dict(p)
+                continue
+            # fill missing fields from the new record
+            for k, v in p.items():
+                if prev.get(k) in (None, "") and v not in (None, ""):
+                    prev[k] = v
+    return list(by.values())
+
+
+def load_cell_bboxes(cell_ids: list[int]) -> dict[int, dict]:
+    if not cell_ids:
+        return {}
+    with connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT cell_id,
+                       ST_XMin(geom) AS west, ST_YMin(geom) AS south,
+                       ST_XMax(geom) AS east, ST_YMax(geom) AS north
+                FROM alphaearth_cells
+                WHERE cell_id = ANY(%s)
+                """,
+                (cell_ids,),
+            )
+            rows = list(cur.fetchall())
+    return {
+        int(r["cell_id"]): {
+            "cell_id": int(r["cell_id"]),
+            "west": float(r["west"]),
+            "south": float(r["south"]),
+            "east": float(r["east"]),
+            "north": float(r["north"]),
+        }
+        for r in rows
+    }
+
+
+def fetch_missing_walk_chips(walks: list[dict], workers: int = 16) -> dict:
+    """Download Esri chips for NN frames that lack local imagery."""
+    need: set[int] = set()
+    for w in walks:
+        if w.get("status") != "ok":
+            continue
+        for fr in w.get("frames") or []:
+            cid = fr.get("nn_cell_id")
+            if cid is None:
+                continue
+            cid = int(cid)
+            if not (CHIPS / f"{cid}_patch.jpg").exists():
+                need.add(cid)
+    if not need:
+        return {"needed": 0, "wrote": 0, "failed": 0}
+    print(f"fetching Esri chips for {len(need)} walk NN cells …", flush=True)
+    bboxes = load_cell_bboxes(sorted(need))
+    rows = [bboxes[i] for i in sorted(need) if i in bboxes]
+    wrote = failed = 0
+    CHIPS.mkdir(parents=True, exist_ok=True)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = [pool.submit(chip_job, r, False) for r in rows]
+        for i, fut in enumerate(as_completed(futs), 1):
+            res = fut.result()
+            if res.get("ok"):
+                wrote += int(res.get("wrote") or 0)
+            else:
+                failed += 1
+            if i % 50 == 0 or i == len(futs):
+                print(f"  chips {i}/{len(futs)} wrote={wrote} fail={failed}", flush=True)
+    # patch frame paths onto walks
+    for w in walks:
+        if w.get("status") != "ok":
+            continue
+        for fr in w.get("frames") or []:
+            cid = fr.get("nn_cell_id")
+            if cid is None:
+                continue
+            cid = int(cid)
+            if (CHIPS / f"{cid}_patch.jpg").exists():
+                fr["patch"] = f"chips/{cid}_patch.jpg"
+            if (CHIPS / f"{cid}_context.jpg").exists():
+                fr["context"] = f"chips/{cid}_context.jpg"
+            if (CHIPS / f"{cid}_context500.jpg").exists():
+                fr["context500"] = f"chips/{cid}_context500.jpg"
+    return {"needed": len(need), "wrote": wrote, "failed": failed}
+
+
 def resolve_fold(city_id: str, intl_fold_dir: Path | None = None) -> tuple[Path | None, str | None, str]:
     """Return (checkpoint_path, fold_id, method) for a city.
 
@@ -186,22 +341,22 @@ def build_city_walk(
     pts: list[dict],
     emb: dict[int, np.ndarray],
     intl_fold_dir: Path | None = None,
+    dou: str | None = None,
 ) -> dict | None:
+    walk_key = f"{city_id}::{dou}" if dou else city_id
+    base_meta = {
+        "city_id": city_id,
+        "city_name": city_name,
+        "country": city_id.split("_", 1)[0],
+        "dou": dou,
+        "dou_label": DOU_LABEL.get(dou) if dou else None,
+        "walk_key": walk_key,
+    }
     ckpt, region, method = resolve_fold(city_id, intl_fold_dir=intl_fold_dir)
     if ckpt is None:
-        return {
-            "city_id": city_id,
-            "city_name": city_name,
-            "status": "skipped",
-            "reason": "no_fold_map",
-        }
+        return {**base_meta, "status": "skipped", "reason": "no_fold_map"}
     if not ckpt.exists():
-        return {
-            "city_id": city_id,
-            "city_name": city_name,
-            "status": "skipped",
-            "reason": f"missing {ckpt.name}",
-        }
+        return {**base_meta, "status": "skipped", "reason": f"missing {ckpt.name}"}
 
     fold = joblib.load(ckpt)
     mu = np.asarray(fold["mu"], dtype=np.float64).reshape(-1)
@@ -237,8 +392,7 @@ def build_city_walk(
         meta.append(dict(p))
     if len(ids) < MIN_ENDPOINT * 2:
         return {
-            "city_id": city_id,
-            "city_name": city_name,
+            **base_meta,
             "status": "skipped",
             "reason": "too_few_cells",
             "n_cells": len(ids),
@@ -266,8 +420,7 @@ def build_city_walk(
     ep_info["proba_model"] = proba_space
     if not res_idx or not nres_idx:
         return {
-            "city_id": city_id,
-            "city_name": city_name,
+            **base_meta,
             "week4_region": CITY_TO_WEEK4_REGION.get(city_id),
             "fold_id": region,
             "status": "skipped",
@@ -327,9 +480,7 @@ def build_city_walk(
         )
 
     return {
-        "city_id": city_id,
-        "city_name": city_name,
-        "country": city_id.split("_", 1)[0],
+        **base_meta,
         "week4_region": CITY_TO_WEEK4_REGION.get(city_id),
         "fold_id": region,
         "pred_model": method,
@@ -359,6 +510,12 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", type=str, default=os.environ.get("RUN_DIR", ""))
     ap.add_argument("--points", type=str, default=str(POINTS))
+    ap.add_argument(
+        "--dashboard-points",
+        type=str,
+        default=str(DASH_POINTS),
+        help="DoU-balanced sample merged into the walk corpus when present",
+    )
     ap.add_argument("--intl-fold-dir", type=str, default=str(INTL_FOLD_DIR))
     ap.add_argument(
         "--out",
@@ -372,7 +529,19 @@ def main() -> int:
         default=None,
         help="Optional city_id filter (default: all cities in points)",
     )
-    ap.add_argument("--workers", type=int, default=0, help="Parallel city walks")
+    ap.add_argument(
+        "--by-dou",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Build one walk per city × DoU stratum (urban/suburban/rural)",
+    )
+    ap.add_argument("--workers", type=int, default=0, help="Parallel walk jobs")
+    ap.add_argument("--chip-workers", type=int, default=0, help="Parallel Esri chip fetches")
+    ap.add_argument(
+        "--skip-chip-fetch",
+        action="store_true",
+        help="Do not download missing chips for walk NN frames",
+    )
     args = ap.parse_args()
 
     if args.run_dir:
@@ -413,10 +582,22 @@ def main() -> int:
         update_progress(run_dir, status="failed", stage="load_points")
         raise SystemExit(f"missing {points_path}")
 
-    payload = json.loads(points_path.read_text())
-    pts = payload["points"]
+    globe_pts = json.loads(points_path.read_text())["points"]
+    groups = [globe_pts]
+    dash_path = Path(args.dashboard_points)
+    if dash_path.exists():
+        dash_pts = json.loads(dash_path.read_text())["points"]
+        groups.append(dash_pts)
+        print(f"merging dashboard_points n={len(dash_pts)} from {dash_path}", flush=True)
+    pts = merge_points(*groups)
+    dou_counts = attach_dou(pts)
+    attach_chip_paths(pts)
     cell_ids = [int(p["id"]) for p in pts]
-    print(f"loaded {len(pts)} points from {points_path}", flush=True)
+    print(
+        f"corpus n={len(pts)} globe={len(globe_pts)} dou={dou_counts} "
+        f"with_patch={sum(1 for p in pts if p.get('patch'))}",
+        flush=True,
+    )
 
     update_progress(run_dir, stage="load_embeddings", total=len(cell_ids))
     print("fetching 64-D embeddings from Postgres …", flush=True)
@@ -441,57 +622,82 @@ def main() -> int:
         if missing:
             raise SystemExit(f"--cities not in points: {missing}")
         cities = sorted(want)
-    update_progress(run_dir, stage="walks", total=len(cities), completed=0, failed=0)
-    walks_by_id: dict[str, dict] = {}
+
+    # Jobs: (city_id, dou|None)
+    if args.by_dou:
+        jobs = [(cid, dou) for cid in cities for dou in DOU_ORDER]
+    else:
+        jobs = [(cid, None) for cid in cities]
+
+    update_progress(run_dir, stage="walks", total=len(jobs), completed=0, failed=0)
+    walks_by_key: dict[str, dict] = {}
     ok = skip = fail = 0
     done = 0
 
-    def _one(city_id: str) -> dict:
+    def _one(city_id: str, dou: str | None) -> dict:
+        if dou is None:
+            pool = by_city[city_id]
+        else:
+            pool = [p for p in by_city[city_id] if p.get("dou") == dou]
         return build_city_walk(
             city_id,
             names[city_id],
-            by_city[city_id],
+            pool,
             emb,
             intl_fold_dir=intl_fold_dir,
+            dou=dou,
         )
 
-    print(f"building walks for {len(cities)} cities workers={workers} …", flush=True)
+    print(
+        f"building {'city×DoU' if args.by_dou else 'city'} walks "
+        f"n_jobs={len(jobs)} workers={workers} …",
+        flush=True,
+    )
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futs = {pool.submit(_one, cid): cid for cid in cities}
+        futs = {pool.submit(_one, cid, dou): (cid, dou) for cid, dou in jobs}
         for fut in as_completed(futs):
-            city_id = futs[fut]
+            city_id, dou = futs[fut]
+            walk_key = f"{city_id}::{dou}" if dou else city_id
             done += 1
             try:
                 walk = fut.result()
             except Exception as e:
                 fail += 1
-                (run_dir / "failures" / f"{city_id}.txt").write_text(str(e) + "\n")
+                (run_dir / "failures" / f"{walk_key.replace('::', '__')}.txt").write_text(
+                    str(e) + "\n"
+                )
                 walk = {
                     "city_id": city_id,
                     "city_name": names[city_id],
+                    "country": city_id.split("_", 1)[0],
+                    "dou": dou,
+                    "dou_label": DOU_LABEL.get(dou) if dou else None,
+                    "walk_key": walk_key,
                     "status": "failed",
                     "reason": str(e),
                 }
-                print(f"  [{done}/{len(cities)}] FAILED {city_id}: {e}", flush=True)
+                print(f"  [{done}/{len(jobs)}] FAILED {walk_key}: {e}", flush=True)
             else:
                 if walk and walk.get("status") == "ok":
                     ok += 1
                     ep = walk["endpoint_proba"]
+                    tag = walk.get("dou_label") or "all"
                     print(
-                        f"  [{done}/{len(cities)}] ok {city_id} "
-                        f"n_hi_res={walk['n_hi_res']} n_hi_nres={walk['n_hi_nres']} "
+                        f"  [{done}/{len(jobs)}] ok {city_id} [{tag}] "
+                        f"n={walk['n_cells']} hi={walk['n_hi_res']}/{walk['n_hi_nres']} "
                         f"P(res) {ep['start_model']:.3f} → {ep['end_model']:.3f}",
                         flush=True,
                     )
                 else:
                     skip += 1
                     print(
-                        f"  [{done}/{len(cities)}] skip {city_id}: {walk.get('reason')}",
+                        f"  [{done}/{len(jobs)}] skip {walk_key}: {walk.get('reason')}",
                         flush=True,
                     )
-            walks_by_id[city_id] = walk
-            atomic_json(run_dir / "checkpoints" / f"{city_id}.json", walk)
-            (run_dir / "checkpoints" / f"{city_id}.DONE").write_text("ok\n")
+            walks_by_key[walk_key] = walk
+            ck_name = walk_key.replace("::", "__")
+            atomic_json(run_dir / "checkpoints" / f"{ck_name}.json", walk)
+            (run_dir / "checkpoints" / f"{ck_name}.DONE").write_text("ok\n")
             update_progress(
                 run_dir,
                 stage="walks",
@@ -499,31 +705,47 @@ def main() -> int:
                 success=ok,
                 skipped=skip,
                 failed=fail,
-                total=len(cities),
-                percent_complete=round(100.0 * done / len(cities), 2),
-                last_city=city_id,
+                total=len(jobs),
+                percent_complete=round(100.0 * done / len(jobs), 2),
+                last_walk=walk_key,
             )
 
-    walks = [walks_by_id[c] for c in cities]
+    walks = [walks_by_key[f"{c}::{d}" if d else c] for c, d in jobs]
+
+    if not args.skip_chip_fetch:
+        update_progress(run_dir, stage="fetch_chips")
+        chip_workers = int(args.chip_workers or min(32, n_cpus * 2))
+        chip_stats = fetch_missing_walk_chips(walks, workers=chip_workers)
+        print(f"chip fetch: {chip_stats}", flush=True)
+    else:
+        chip_stats = {"needed": 0, "wrote": 0, "failed": 0, "skipped": True}
+
     update_progress(run_dir, stage="write_outputs")
+    n_city_ok = len({w["city_id"] for w in walks if w.get("status") == "ok"})
     out = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "method": {
             "endpoints": "centroid high-conf correct res/nres (scored with walk proba model)",
-            "pls_nn": "LORO PLS-DA dims 1-32 cosine NN",
+            "pls_nn": "LORO PLS-DA dims 1-32 cosine NN within city×DoU pool",
             "proba": "LORO logistic on PLS dims 1-3 (centroid path); fallback lr64 if pls3 missing",
             "n_steps": N_STEPS,
             "hi_res": HI_RES,
             "hi_nres": HI_NRES,
             "min_endpoint_cells": MIN_ENDPOINT,
-            "corpus": "viz sample per city",
+            "corpus": "globe points ∪ dashboard_points, stratified by GHS-SMOD dou",
+            "by_dou": bool(args.by_dou),
+            "dou_order": list(DOU_ORDER),
+            "dou_labels": dict(DOU_LABEL),
             "intl_fold_dir": str(intl_fold_dir),
             "walk_proba_model": WALK_PROBA_MODEL,
+            "chip_fetch": chip_stats,
         },
-        "n_cities": len(walks),
+        "n_cities": len(cities),
+        "n_walks": len(walks),
         "n_ok": ok,
         "n_skipped": skip,
         "n_failed": fail,
+        "n_cities_with_ok_walk": n_city_ok,
         "cities": walks,
     }
     out_path = Path(args.out) if args.out else (DATA / "boundary_walks.json")
@@ -531,17 +753,25 @@ def main() -> int:
     atomic_json(out_path, out)
     summary = {
         "status": "completed" if fail == 0 else "completed_with_failures",
-        "n_cities": len(walks),
+        "n_cities": len(cities),
+        "n_walks": len(walks),
         "n_ok": ok,
         "n_skipped": skip,
         "n_failed": fail,
+        "n_cities_with_ok_walk": n_city_ok,
+        "by_dou": bool(args.by_dou),
         "runtime_seconds": round(time.time() - t0, 1),
         "boundary_walks": str(out_path),
-        "per_city": [
+        "chip_fetch": chip_stats,
+        "per_walk": [
             {
+                "walk_key": w.get("walk_key"),
                 "city_id": w.get("city_id"),
                 "city_name": w.get("city_name"),
+                "dou": w.get("dou"),
+                "dou_label": w.get("dou_label"),
                 "status": w.get("status"),
+                "n_cells": w.get("n_cells"),
                 "n_hi_res": w.get("n_hi_res"),
                 "n_hi_nres": w.get("n_hi_nres"),
                 "endpoint_mode": (w.get("endpoint_selection") or {}).get("endpoint_mode"),
@@ -563,7 +793,7 @@ def main() -> int:
         run_dir,
         status=summary["status"],
         stage="done",
-        completed=len(cities),
+        completed=len(jobs),
         failed=fail,
         percent_complete=100.0,
         runtime_seconds=summary["runtime_seconds"],

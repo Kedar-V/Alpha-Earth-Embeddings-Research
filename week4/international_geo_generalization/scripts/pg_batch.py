@@ -131,6 +131,9 @@ def _copy_upsert_cell_chunk(payload: dict) -> int:
     for attempt in range(attempts):
         try:
             with _connect() as conn:
+                # WAL is still written. The commit returns without waiting for
+                # the disk. A crash retries the city; the upsert is idempotent.
+                conn.execute("SET synchronous_commit TO off")
                 with conn.cursor() as cur:
                     # Do NOT use ON COMMIT DROP — we commit once at the end of this txn.
                     cur.execute(
@@ -171,7 +174,7 @@ def _copy_upsert_cell_chunk(payload: dict) -> int:
                           jsonb_build_object('pixel_wkt_sha1', s.cell_key)
                         FROM stage_cells s
                         ON CONFLICT (city_id, year, cell_key) WHERE cell_key IS NOT NULL
-                        DO UPDATE SET updated_at = now()
+                        DO NOTHING
                         """,
                         (city_id, EMBED_YEAR, aef_source_id),
                     )
@@ -187,13 +190,7 @@ def _copy_upsert_cell_chunk(payload: dict) -> int:
                         FROM stage_cells s
                         JOIN alphaearth_cells a
                           ON a.city_id = %s AND a.year = %s AND a.cell_key = s.cell_key
-                        ON CONFLICT (cell_id) DO UPDATE SET
-                          pixel_lon = EXCLUDED.pixel_lon,
-                          pixel_lat = EXCLUDED.pixel_lat,
-                          area_crs = EXCLUDED.area_crs,
-                          utm_x = EXCLUDED.utm_x,
-                          utm_y = EXCLUDED.utm_y,
-                          updated_at = now()
+                        ON CONFLICT (cell_id) DO NOTHING
                         """,
                         (city_id, EMBED_YEAR),
                     )
@@ -241,23 +238,9 @@ def copy_upsert_cells(
         for fut in tqdm(as_completed(futs), total=len(futs), desc=f"copy_cells:{city_id}"):
             fut.result()
 
-    cell_id_by_wkt: dict[str, int] = {}
-    with _connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT a.cell_id, a.cell_key, ST_AsText(a.geom) AS wkt
-                FROM alphaearth_cells a
-                WHERE a.city_id = %s AND a.year = %s
-                """,
-                (city_id, EMBED_YEAR),
-            )
-            key_to_id = {r["cell_key"]: int(r["cell_id"]) for r in cur.fetchall()}
-    for key, wkt in zip(df["cell_key"].tolist(), df["pixel_wkt"].astype(str).tolist()):
-        cid = key_to_id.get(key)
-        if cid is not None:
-            cell_id_by_wkt[wkt] = cid
-    return cell_id_by_wkt
+    # Look up only the keys just written. Selecting every cell in the city and
+    # converting its geometry to text rereads the urban cells we are not adding.
+    return lookup_cell_ids(city_id, df, area_crs)
 
 
 def _label_chunk_worker(payload: dict) -> dict[str, list]:
@@ -385,6 +368,7 @@ def _copy_upsert_labels_bundle(bundle: dict[str, list]) -> dict[str, int]:
     """One DB connection: COPY staging + upsert fragments from one worker."""
     n = {"labels": 0, "metrics": 0, "intersections": 0, "spatial": 0}
     with _connect() as conn:
+        conn.execute("SET synchronous_commit TO off")
         with conn.cursor() as cur:
             if bundle["intersections"]:
                 cur.execute(
@@ -527,6 +511,33 @@ def _compute_and_write_chunk(payload: dict) -> dict[str, int]:
     return _copy_upsert_labels_bundle(bundle)
 
 
+def lookup_cell_ids(city_id: str, cells_df: pd.DataFrame, area_crs: str) -> dict[str, int]:
+    """pixel_wkt → cell_id for cells already stored. No insert."""
+    if cells_df.empty:
+        return {}
+    df = _prepare_cells_df(cells_df, area_crs)
+    keys = df["cell_key"].tolist()
+    wkts = df["pixel_wkt"].astype(str).tolist()
+    wkt_by_key = dict(zip(keys, wkts))
+    out: dict[str, int] = {}
+    with _connect() as conn:
+        for start in range(0, len(keys), 10_000):
+            part = keys[start : start + 10_000]
+            rows = conn.execute(
+                """
+                SELECT cell_id, cell_key
+                FROM alphaearth_cells
+                WHERE city_id = %s AND year = %s AND cell_key = ANY(%s)
+                """,
+                (city_id, EMBED_YEAR, part),
+            ).fetchall()
+            for row in rows:
+                wkt = wkt_by_key.get(row["cell_key"])
+                if wkt is not None:
+                    out[wkt] = int(row["cell_id"])
+    return out
+
+
 def insert_cells_and_labels_parallel(
     city_id: str,
     buildings_df: pd.DataFrame,
@@ -534,6 +545,8 @@ def insert_cells_and_labels_parallel(
     cells_df: pd.DataFrame,
     aef_source_id: int,
     workers: int = 32,
+    *,
+    upsert_cells: bool = True,
 ) -> dict[str, Any]:
     if cells_df.empty:
         return {"n_cells": 0, "n_labels": 0, "n_intersections": 0}
@@ -541,14 +554,17 @@ def insert_cells_and_labels_parallel(
     area_crs = str(cells_df["crs"].mode().iloc[0]) if "crs" in cells_df.columns else "EPSG:4326"
     # Cap concurrent DB writers below max_connections (default 100); leave headroom.
     db_writers = max(4, min(workers, 32))
-    cell_id_by_wkt = copy_upsert_cells(
-        city_id,
-        cells_df,
-        aef_source_id,
-        area_crs,
-        chunk_size=10_000,
-        writers=min(db_writers, 8),
-    )
+    if upsert_cells:
+        cell_id_by_wkt = copy_upsert_cells(
+            city_id,
+            cells_df,
+            aef_source_id,
+            area_crs,
+            chunk_size=20_000,
+            writers=min(db_writers, 8),
+        )
+    else:
+        cell_id_by_wkt = lookup_cell_ids(city_id, cells_df, area_crs)
     if not cell_id_by_wkt:
         return {"n_cells": 0, "n_labels": 0, "n_intersections": 0, "area_crs": area_crs}
 

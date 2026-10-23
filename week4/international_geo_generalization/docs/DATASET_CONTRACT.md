@@ -30,6 +30,7 @@ The core DB stores **raw / full** lineage. Balanced analysis tables are derived 
 | `alphaearth_cells` | cell geom, year, `a00…a63` |
 | `cell_building_intersections` | recomputable cell↔building areas |
 | `cell_labels` | versioned `frac_res` / `frac_nres` / `frac_empty` / `binary_label` / purity |
+| `cell_degree_of_urbanisation` | GHS-SMOD L2 code at the cell center + study `dou` rollup |
 | `data_sources` | provenance |
 | `experiment_*` | runs, splits, metrics, extract manifests |
 
@@ -142,6 +143,7 @@ SELECT
   cm.area_res_m2, cm.area_nres_m2,
   cm.n_res_buildings, cm.n_nres_buildings, cm.n_buildings,
   cl.label_version,
+  dou.smod_code, dou.smod_label, dou.dou,
   c.a00, c.a01  -- … a63
 FROM alphaearth_cells c
 JOIN cities ci ON ci.city_id = c.city_id
@@ -149,6 +151,7 @@ JOIN cell_labels cl ON cl.cell_id = c.cell_id
 LEFT JOIN cell_spatial_metrics sm ON sm.cell_id = c.cell_id
 LEFT JOIN cell_label_metrics cm
   ON cm.cell_id = cl.cell_id AND cm.label_version = cl.label_version
+LEFT JOIN cell_degree_of_urbanisation dou ON dou.cell_id = c.cell_id
 WHERE ci.country_id = 'USA';
 ```
 
@@ -185,7 +188,8 @@ Provisional R is allowed before buildings exist; recompute before final experime
 1. Discover Track-A buildings in a generous disk (up to ~30 km); persist full footprints.
 2. For AlphaEarth download, **stratified area-balance** by distance ring (e.g. 5 km bins): within each ring, thin the majority class by footprint area to ≈ minority area × headroom (~1.10). Then cap each city to the **same** footprint budget = week4 total Track-A footprint / 10 metros (≈ 24.60 km²; `--target-area-m2`). Rings are sampling strata only — not AOI zones.
 3. Embed / label cells for the sampled set; fill sidecars (`building_label_audit`, `cell_spatial_metrics`, `cell_label_metrics`).
-4. Later: pure-exclusive filter + per-city 1:1 **pixel-count** undersample; register extracts in `experiment_extracts`. Expand the sample later by raising headroom/rings without re-pulling Overture.
+4. Sample GHS-SMOD 2025 at each cell center into `cell_degree_of_urbanisation` (`scripts/attach_degree_of_urbanisation.py`). Native L2 class on every cell; `dou` is the urban / peri-urban / rural rollup.
+5. Later: pure-exclusive filter + per-city 1:1 **pixel-count** undersample; register extracts in `experiment_extracts`. Expand the sample later by raising headroom/rings without re-pulling Overture.
 
 See package [`README.md`](../README.md) § Dataset creation for rationale and cost notes.
 
@@ -205,6 +209,7 @@ country
     → cell_building_intersections
     → cell_labels (versioned fractions / binary / purity)
          └── cell_label_metrics     (areas, frac_*_full, counts)
+    → cell_degree_of_urbanisation   (GHS-SMOD smod_code + dou)
               → balanced extract (later)
                    → experiment_splits / experiment_metrics
 ```

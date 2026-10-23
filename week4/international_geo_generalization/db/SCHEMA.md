@@ -14,6 +14,7 @@ continent
               │     └── building_label_audit      (Track-A / y_res sidecar)
               ├── alphaearth_cells
               │     ├── cell_spatial_metrics      (lon/lat/size/area_crs)
+              │     ├── cell_degree_of_urbanisation  (GHS-SMOD code + dou rollup)
               │     ├── cell_building_intersections
               │     └── cell_labels (versioned)
               │           └── cell_label_metrics  (areas, frac_*_full, counts)
@@ -47,6 +48,7 @@ data_quality_events   (logged repairs / quarantines — never silent drops)
 | `alphaearth_cells` | Cell geometry + year + explicit `a00`…`a63` embedding columns |
 | `cell_building_intersections` | Area/fraction join so labels can be recomputed offline |
 | `cell_labels` | Versioned cell ground truth (`label_version` is part of PK) |
+| `cell_degree_of_urbanisation` | GHS-SMOD L2 class at the cell center, plus the urban / peri-urban / rural rollup. Stratifier only — not residential ground truth |
 | `morphology_features` | Versioned city morphology descriptors |
 | `experiment_splits` | Geographic train/val/test assignments for leakage audits |
 | `experiment_runs` / `experiment_metrics` | Run metadata + SQL-reconstructable transfer matrices |

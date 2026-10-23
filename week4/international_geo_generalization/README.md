@@ -59,6 +59,10 @@ PostgreSQL holds lineage. AlphaEarth download is the expensive step, so we **dis
 5. Label      Pixel fractions / purity from building∩cell geometry
               (use enough footprints so labels on sampled cells stay correct)
 
+5b. DoU       GHS-SMOD 2025 at each cell center (1 km containing cell).
+              Native L2 class plus urban / peri-urban / rural rollup.
+              Not an AOI ring and not residential ground truth.
+
 6. Balance    Later: pure-exclusive cells, then per-city 1:1 undersample by
               pixel count (seed recorded). Headroom exists because some cells
               are mixed/empty or pixels-per-m² is uneven (~5–15% slack is normal)

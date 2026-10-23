@@ -172,7 +172,8 @@ AOI = disk(city center, R)
 R   = max distance from center to discovered buildings (+ optional buffer)
 ```
 
-No urban/peri/rural **AOI zone rings** — just the enclosing disk.  
+No urban/peri/rural **AOI zone rings** — just the enclosing disk.
+Degree of Urbanisation is a **per-cell label** (`cell_degree_of_urbanisation`), sampled from GHS-SMOD, not a zone used to cut the AOI.  
 Distance rings may still be used as **AlphaEarth sampling strata** (area-balance RES/NRES per ring); that is a download gate, not an AOI partition. See [`../README.md`](../README.md) (Dataset creation) and [`../docs/DATASET_CONTRACT.md`](../docs/DATASET_CONTRACT.md).
 
 ```bash
