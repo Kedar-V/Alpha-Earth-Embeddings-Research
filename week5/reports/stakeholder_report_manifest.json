@@ -1,0 +1,29 @@
+{
+  "pdf": "week5/reports/alphaearth_weeks1-5_stakeholder_insights.pdf",
+  "figures": {
+    "cls": "week5/reports/stakeholder_figures/01_classification.png",
+    "reg": "week5/reports/stakeholder_figures/02_regression.png",
+    "gen": "week5/reports/stakeholder_figures/03_generalisation.png",
+    "ctry": "week5/reports/stakeholder_figures/05_country_loro.png",
+    "xfer": "week5/reports/stakeholder_figures/06_country_transfer.png",
+    "loco": "week5/reports/stakeholder_figures/07_loco.png",
+    "emb": "week5/reports/stakeholder_figures/04_embedding_dynamics.png",
+    "umap": "outputs/week4_region_umap/figures/umap_gt_wrong_side_by_region.png"
+  },
+  "built": "2026-10-27",
+  "gap_vs_f1_pearson": 0.9606576984103771,
+  "notebook_sourced_numbers": {
+    "week1_binary_loro": "notebooks/week1/00_briefing.ipynb",
+    "week1_pooled_80_20": "notebooks/week1/00_briefing.ipynb",
+    "week1_ten_class_loro": "notebooks/week1/00_briefing.ipynb",
+    "week2_bbox_cnn_binary": "notebooks/week2/02_cnn_bbox_grid_training.ipynb",
+    "week2_centroid_binary": "notebooks/week2/02_cnn_bbox_grid_training.ipynb",
+    "week2_bbox_cnn_ten_class": "notebooks/week2/02_cnn_bbox_grid_training.ipynb",
+    "building_ae_cnn_vs_ghsl": "notebooks/week4/03_model_comparison.ipynb",
+    "pls_10m_vs_100m": "PLS / LR / t1 LORO F1",
+    "balanced_tiles_ghsl": "1:1 tile table",
+    "within_dim_tradeoff": "k1->k20 within vs cross deltas, chordal vs transfer drop",
+    "loco_strict": "strict LOCO table"
+  },
+  "rebuild": ".venv/bin/python scripts/build_stakeholder_report.py"
+}
