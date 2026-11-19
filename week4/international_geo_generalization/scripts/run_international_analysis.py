@@ -641,8 +641,19 @@ def main() -> int:
         t0 = time.time()
 
         loro = {}
-        for country in ("USA", "IND", "JPN"):
-            if country not in set(countries):
+        # Leave-one-city-out for every country that has ≥2 cities in the extract
+        # (USA/IND/JPN historically; Africa multi-city panels e.g. EGY/NGA).
+        country_order = []
+        for c in ("USA", "IND", "JPN"):
+            if c in set(countries):
+                country_order.append(c)
+        for c in sorted(set(countries)):
+            if c not in country_order:
+                country_order.append(c)
+        for country in country_order:
+            n_cities = len(np.unique(regions[countries == country]))
+            if n_cities < 2:
+                log(log_path, f"LORO skip {country}: only {n_cities} city (need ≥2)")
                 continue
             write_progress(run_dir, stage=f"loro_{country}", status="running")
             loro[country] = run_loro(run_dir, log_path, country, args.workers)

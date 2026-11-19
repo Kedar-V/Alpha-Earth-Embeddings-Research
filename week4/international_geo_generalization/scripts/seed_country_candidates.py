@@ -16,6 +16,11 @@ from lib.db import connect, wait_until_ready  # noqa: E402
 FILES = {
     "JPN": ROOT / "data" / "japan_city_candidates.json",
     "IND": ROOT / "data" / "india_city_candidates.json",
+    "EGY": ROOT / "data" / "egypt_city_candidates.json",
+    "GHA": ROOT / "data" / "ghana_city_candidates.json",
+    "KEN": ROOT / "data" / "kenya_city_candidates.json",
+    "NGA": ROOT / "data" / "nigeria_city_candidates.json",
+    "ZAF": ROOT / "data" / "south_africa_city_candidates.json",
 }
 
 

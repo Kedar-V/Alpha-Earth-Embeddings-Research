@@ -10,7 +10,9 @@ Repo: [Kedar-V/Alpha-Earth-Embeddings-Research](https://github.com/Kedar-V/Alpha
 **Trial** — AlphaEarth + logistic regression for residential vs non-residential across US metros.  
 **Phase 2 GT** — multi-class building-type labels + AlphaEarth centroid embeddings + spatial alignment QA.  
 **Protocol B baseline** — locked LORO + macro-F1 on US AlphaEarth-only features (notebook 05).  
-**Residential definition** — locked as [`resi_def_v1`](docs/residential_definition_v1.md) (building GT + 10 m cell fraction).
+**Residential definition** — locked as [`resi_def_v1`](docs/residential_definition_v1.md) (building GT + 10 m cell fraction).  
+**AE vs GHSL baseline (locked)** — Week 6 **Section 3**: fraction MAE in Overture polygon space (AE Ridge · AE PLS · GHS-BUILT-S; buildings n=71,497; 100 m tiles n=25,220). See [`notebooks/week6/`](notebooks/week6/).  
+**Week 7** — same Section 3 eval sets; AE Ridge head replaced by XGBoost ([`notebooks/week7/`](notebooks/week7/)).
 
 ### Canonical building-type dataset
 
@@ -40,6 +42,8 @@ Short story notebooks with figures already under `outputs/` (no retrain needed):
 | 1 | [`notebooks/week1/00_briefing.ipynb`](notebooks/week1/00_briefing.ipynb): embeddings, Overture GT, binary + 10-class US baselines |
 | 2 | [`notebooks/week2/00_briefing.ipynb`](notebooks/week2/00_briefing.ipynb): DoU / hinterland, missingness bias, bbox CNN |
 | 3 | [`notebooks/week3/00_briefing.ipynb`](notebooks/week3/00_briefing.ipynb): building vs pixel ladder, soft-fraction 3-class, 3×3 CNN |
+| 6 | [`notebooks/week6/00_briefing.ipynb`](notebooks/week6/00_briefing.ipynb): Section 3 AE vs GHSL baseline (locked) |
+| 7 | [`notebooks/week7/00_briefing.ipynb`](notebooks/week7/00_briefing.ipynb): XGBoost head swap on Section 3 eval sets |
 
 ## Notebooks
 

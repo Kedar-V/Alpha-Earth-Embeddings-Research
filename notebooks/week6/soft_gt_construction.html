@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week 6 — How soft GT is built</title>
+<style>
+  :root {
+    --ink: #14231F;
+    --muted: #4A5562;
+    --line: #D9D5C8;
+    --bg: #F6F4EE;
+    --card: #FCFBF7;
+    --ae: #1F6FA8;
+    --res: #2F6B4F;
+    --nres: #B35C1E;
+    --cell: #9CC3E0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 24px 64px;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.45 "IBM Plex Sans", system-ui, sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  .eyebrow { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--ae); }
+  h1 { margin: 0; font-family: "Source Serif 4", Georgia, serif; font-size: 36px; font-weight: 600; line-height: 1.15; }
+  .lede { margin: 0; color: var(--muted); font-size: 17px; }
+  .step {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 22px 24px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .step h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 999px;
+    background: var(--ink); color: #EDEBE4; font-size: 13px; font-weight: 600;
+    margin-right: 8px;
+  }
+  .title-row { display: flex; align-items: center; gap: 4px; }
+  svg { width: 100%; height: auto; display: block; background: #fff; border: 1px solid var(--line); border-radius: 8px; }
+  .formula {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px; line-height: 1.55;
+    background: #EEF2F0; border-radius: 8px; padding: 12px 14px; color: var(--ink);
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div>
+    <p class="eyebrow">Week 6 · soft GT</p>
+    <h1>How soft ground truth is created</h1>
+    <p class="lede">Same Overture footprints as hard labels — but the target is mean soft cell coverage inside each building, not 0/1 <code>y_res</code>.</p>
+  </div>
+
+  <div class="legend">
+    <span><i class="swatch" style="background:#86efac;border:1px solid var(--res)"></i>RES footprint</span>
+    <span><i class="swatch" style="background:#fdba74;border:1px solid var(--nres)"></i>NRES footprint</span>
+    <span><i class="swatch" style="background:var(--cell);border:1px solid var(--ae)"></i>AE 10 m cell</span>
+    <span><i class="swatch" style="background:#1d4ed8"></i>inside_polygon cells</span>
+  </div>
+
+  <section class="step">
+    <div class="title-row"><span class="badge">1</span><h2>Overture footprints (EPSG:4326)</h2></div>
+    <p>Track-A buildings with locked <code>resi_def_v1</code>. Hard GT would stop here as (1,0) or (0,1). Soft GT keeps going.</p>
+    <svg viewBox="0 0 900 220" role="img" aria-label="Two building footprints">
+      <rect x="40" y="30" width="820" height="160" fill="#eef2f7" stroke="#cbd5e1"/>
+      <path d="M90,70 L210,60 L230,150 L80,145 Z" fill="#86efac" stroke="#166534" stroke-width="2"/>
+      <text x="120" y="115" font-size="14" fill="#14532d" font-family="system-ui">RES building</text>
+      <text x="100" y="175" font-size="12" fill="#64748b" font-family="system-ui">y_res = 1 → hard GT (1, 0)</text>
+      <path d="M520,55 L700,70 L690,155 L500,140 Z" fill="#fdba74" stroke="#9a3412" stroke-width="2"/>
+      <text x="560" y="110" font-size="14" fill="#7c2d12" font-family="system-ui">NRES building</text>
+      <text x="520" y="175" font-size="12" fill="#64748b" font-family="system-ui">y_res = 0 → hard GT (0, 1)</text>
+    </svg>
+  </section>
+
+  <section class="step">
+    <div class="title-row"><span class="badge">2</span><h2>Overlay AlphaEarth 10 m cells (per-city UTM)</h2></div>
+    <p>Each metro keeps its own AE CRS (e.g. Boston EPSG:32619, Denver EPSG:32613). Cells whose centers fall inside the footprint are tagged <code>inside_polygon</code>.</p>
+    <svg viewBox="0 0 900 280" role="img" aria-label="AE grid over a building">
+      <text x="40" y="28" font-size="13" fill="#1e40af" font-family="system-ui">City UTM lattice · 10 m</text>
+      <g stroke="#93c5fd" stroke-width="1" fill="#dbeafe" fill-opacity="0.45">
+        <rect x="80" y="50" width="44" height="44"/><rect x="124" y="50" width="44" height="44"/><rect x="168" y="50" width="44" height="44"/><rect x="212" y="50" width="44" height="44"/><rect x="256" y="50" width="44" height="44"/>
+        <rect x="80" y="94" width="44" height="44"/><rect x="124" y="94" width="44" height="44"/><rect x="168" y="94" width="44" height="44"/><rect x="212" y="94" width="44" height="44"/><rect x="256" y="94" width="44" height="44"/>
+        <rect x="80" y="138" width="44" height="44"/><rect x="124" y="138" width="44" height="44"/><rect x="168" y="138" width="44" height="44"/><rect x="212" y="138" width="44" height="44"/><rect x="256" y="138" width="44" height="44"/>
+        <rect x="80" y="182" width="44" height="44"/><rect x="124" y="182" width="44" height="44"/><rect x="168" y="182" width="44" height="44"/><rect x="212" y="182" width="44" height="44"/><rect x="256" y="182" width="44" height="44"/>
+      </g>
+      <g stroke="#1d4ed8" stroke-width="2.5" fill="#3b82f6" fill-opacity="0.85">
+        <rect x="124" y="94" width="44" height="44"/>
+        <rect x="168" y="94" width="44" height="44"/>
+        <rect x="212" y="94" width="44" height="44"/>
+        <rect x="124" y="138" width="44" height="44"/>
+        <rect x="168" y="138" width="44" height="44"/>
+      </g>
+      <path d="M135,85 L240,95 L230,175 L120,165 Z" fill="none" stroke="#166534" stroke-width="3"/>
+      <text x="360" y="100" font-size="14" fill="#166534" font-family="system-ui">green outline = Overture polygon</text>
+      <text x="360" y="128" font-size="14" fill="#1d4ed8" font-family="system-ui">blue cells = inside_polygon = True</text>
+      <text x="360" y="156" font-size="14" fill="#64748b" font-family="system-ui">only these cells enter soft GT / AE means</text>
+      <text x="360" y="200" font-size="13" fill="#64748b" font-family="system-ui">Example: 5 inside cells for this building</text>
+    </svg>
+  </section>
+
+  <section class="step">
+    <div class="title-row"><span class="badge">3</span><h2>Per-cell soft fractions (week4 pixel GT)</h2></div>
+    <p>Already computed once in <code>build_week4_pixel_gt.py</code>. For each AE cell, intersect RES vs NRES footprint unions and divide by cell area.</p>
+    <div class="formula">
+frac_res(c)  = area( ∪ RES footprints  ∩ c ) / area(c)<br>
+frac_nres(c) = area( ∪ NRES footprints ∩ c ) / area(c)<br>
+stored as frac_res_full / frac_nres_full in datasets/week4_pixel_gt/pixels.parquet
+    </div>
+    <svg viewBox="0 0 900 260" role="img" aria-label="One cell with partial RES coverage">
+      <rect x="60" y="40" width="160" height="160" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2"/>
+      <path d="M60,120 L140,40 L220,40 L220,100 L160,160 L60,160 Z" fill="#86efac" fill-opacity="0.85" stroke="#166534" stroke-width="2"/>
+      <text x="95" y="130" font-size="13" fill="#14532d" font-family="system-ui">RES ∩ cell</text>
+      <text x="280" y="80" font-size="15" fill="#14231F" font-family="system-ui">Example cell c₁</text>
+      <text x="280" y="110" font-size="14" fill="#4A5562" font-family="system-ui">frac_res ≈ 0.55   (green area / cell)</text>
+      <text x="280" y="138" font-size="14" fill="#4A5562" font-family="system-ui">frac_nres ≈ 0.00</text>
+      <text x="280" y="175" font-size="13" fill="#64748b" font-family="system-ui">Edge cells are partial — that is why soft ≠ hard 1.0</text>
+      <text x="280" y="200" font-size="13" fill="#64748b" font-family="system-ui">Areas measured in the metro’s AE UTM CRS</text>
+    </svg>
+  </section>
+
+  <section class="step">
+    <div class="title-row"><span class="badge">4</span><h2>Join + mean → building soft GT</h2></div>
+    <p>Week 6 joins inside cells to week4 GT on lon/lat, then averages. Same cells feed AE OOF means.</p>
+    <svg viewBox="0 0 900 300" role="img" aria-label="Mean soft GT over inside cells">
+      <!-- five cells with values -->
+      <g font-family="ui-monospace, monospace" font-size="11">
+        <rect x="50" y="40" width="100" height="70" fill="#3b82f6" fill-opacity="0.25" stroke="#1d4ed8"/>
+        <text x="62" y="70" fill="#14231F">res 0.55</text>
+        <text x="62" y="90" fill="#14231F">nres 0.00</text>
+
+        <rect x="160" y="40" width="100" height="70" fill="#3b82f6" fill-opacity="0.25" stroke="#1d4ed8"/>
+        <text x="172" y="70" fill="#14231F">res 0.90</text>
+        <text x="172" y="90" fill="#14231F">nres 0.00</text>
+
+        <rect x="270" y="40" width="100" height="70" fill="#3b82f6" fill-opacity="0.25" stroke="#1d4ed8"/>
+        <text x="282" y="70" fill="#14231F">res 0.40</text>
+        <text x="282" y="90" fill="#14231F">nres 0.00</text>
+
+        <rect x="105" y="120" width="100" height="70" fill="#3b82f6" fill-opacity="0.25" stroke="#1d4ed8"/>
+        <text x="117" y="150" fill="#14231F">res 0.75</text>
+        <text x="117" y="170" fill="#14231F">nres 0.00</text>
+
+        <rect x="215" y="120" width="100" height="70" fill="#3b82f6" fill-opacity="0.25" stroke="#1d4ed8"/>
+        <text x="227" y="150" fill="#14231F">res 0.20</text>
+        <text x="227" y="170" fill="#14231F">nres 0.00</text>
+      </g>
+      <path d="M400,90 L470,90" stroke="#14231F" stroke-width="2" marker-end="url(#arrow)"/>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill="#14231F"/>
+        </marker>
+      </defs>
+      <rect x="490" y="55" width="360" height="140" rx="10" fill="#FCFBF7" stroke="#14231F" stroke-width="1.5"/>
+      <text x="510" y="90" font-size="15" font-weight="600" fill="#14231F" font-family="system-ui">Building soft GT</text>
+      <text x="510" y="120" font-size="14" fill="#1F6FA8" font-family="ui-monospace, monospace">soft_gt_frac_res  = mean(0.55,0.90,0.40,0.75,0.20) = 0.56</text>
+      <text x="510" y="148" font-size="14" fill="#1F6FA8" font-family="ui-monospace, monospace">soft_gt_frac_nres = mean(0,0,0,0,0) = 0.00</text>
+      <text x="510" y="175" font-size="13" fill="#64748b" font-family="system-ui">Hard GT for same RES building would be (1.00, 0.00)</text>
+      <text x="50" y="240" font-size="14" fill="#4A5562" font-family="system-ui">AE pred for the building uses the same 5 cells: mean of Ridge OOF (pred_frac_res, pred_frac_nres).</text>
+      <text x="50" y="265" font-size="14" fill="#4A5562" font-family="system-ui">GHSL pred: separately, mean BUILT-S soft fractions under the footprint mask in Mollweide.</text>
+    </svg>
+    <div class="formula">
+soft_gt_frac_res(B)  = mean_{c ∈ inside(B)} frac_res_full(c)<br>
+soft_gt_frac_nres(B) = mean_{c ∈ inside(B)} frac_nres_full(c)
+    </div>
+  </section>
+
+  <section class="step">
+    <div class="title-row"><span class="badge">5</span><h2>Score soft vs soft on balanced buildings</h2></div>
+    <p>Per-metro 1:1 RES/NRES building balance (seed 42), then MAE on shared AE∩GHSL coverage — soft GT and hard GT both reported.</p>
+    <svg viewBox="0 0 900 160" role="img" aria-label="Scoring flow">
+      <rect x="30" y="40" width="160" height="70" rx="8" fill="#dcfce7" stroke="#166534"/>
+      <text x="55" y="80" font-size="13" fill="#14532d" font-family="system-ui">soft GT (B)</text>
+      <rect x="250" y="25" width="160" height="50" rx="8" fill="#dbeafe" stroke="#1d4ed8"/>
+      <text x="285" y="55" font-size="13" fill="#1e40af" font-family="system-ui">AE mean OOF</text>
+      <rect x="250" y="90" width="160" height="50" rx="8" fill="#ffedd5" stroke="#c2410c"/>
+      <text x="275" y="120" font-size="13" fill="#9a3412" font-family="system-ui">GHSL-S mean</text>
+      <path d="M200,75 L240,50" stroke="#64748b" stroke-width="1.5"/>
+      <path d="M200,75 L240,115" stroke="#64748b" stroke-width="1.5"/>
+      <rect x="480" y="40" width="380" height="70" rx="8" fill="#FCFBF7" stroke="#14231F"/>
+      <text x="500" y="70" font-size="13" fill="#14231F" font-family="system-ui">MAE mean(res,nres) on soft GT</text>
+      <text x="500" y="95" font-size="13" fill="#4A5562" font-family="system-ui">Run: AE 0.274 · BUILT-S 0.204 (balanced shared)</text>
+      <path d="M420,50 L470,75" stroke="#64748b" stroke-width="1.5"/>
+      <path d="M420,115 L470,75" stroke="#64748b" stroke-width="1.5"/>
+    </svg>
+  </section>
+
+  <p style="margin:0;color:var(--muted);font-size:14px">Source: <code>scripts/eval_week6_overture_polygon_mae.py</code> · cell GT from <code>scripts/build_week4_pixel_gt.py</code> · run <code>outputs/week6_overture_polygon_mae/20261110_041557</code></p>
+</div>
+</body>
+</html>

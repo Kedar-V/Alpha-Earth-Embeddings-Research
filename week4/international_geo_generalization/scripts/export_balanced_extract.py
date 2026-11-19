@@ -105,10 +105,22 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", required=True, type=Path)
     ap.add_argument("--run-dir", type=Path, default=None, help="progress.json parent (defaults to out-dir)")
-    ap.add_argument("--countries", nargs="+", default=["USA", "IND", "JPN"])
+    ap.add_argument(
+        "--countries",
+        nargs="+",
+        default=["USA", "IND", "JPN"],
+        help="Country ids; space-separated and/or comma-separated (e.g. EGY,GHA or EGY GHA)",
+    )
     ap.add_argument("--max-per-class", type=int, default=None, help="cap per class per city (smoke)")
     ap.add_argument("--seed", type=int, default=SEED)
     args = ap.parse_args()
+    # Accept both "--countries EGY GHA" and "--countries EGY,GHA,KEN".
+    args.countries = [
+        p.strip()
+        for tok in args.countries
+        for p in str(tok).split(",")
+        if p.strip()
+    ]
 
     out_dir = args.out_dir
     run_dir = args.run_dir or out_dir

@@ -1,0 +1,272 @@
+<title>Ground Truth Flow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: flow strip on top (the pipeline, clickable), map left, one quiet panel right. Colour carries class: teal residential, ochre non-residential. */
+:root {
+  --bg: #f5f7f9; --panel: #ffffff; --fg: #15202b; --muted: #5b6875; --line: #dbe1e7;
+  --res: #1f8fa3; --nres: #b8701f; --empty: #9aa5b1; --ae: #2357c6; --ghsl: #a8327f; --cut: #8a95a1;
+  --hl: color-mix(in srgb, var(--ae) 10%, transparent);
+  --display: "Space Grotesk", "Segoe UI", system-ui, sans-serif; --body: "Inter", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f151b; --panel: #161e26; --fg: #e6ecf1; --muted: #93a1ad; --line: #26323d;
+  --res: #43b6c9; --nres: #d9934a; --empty: #6f7b87; --ae: #6f9cff; --ghsl: #e070b8; --cut: #6f7b87; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f151b; --panel: #161e26; --fg: #e6ecf1; --muted: #93a1ad; --line: #26323d;
+  --res: #43b6c9; --nres: #d9934a; --empty: #6f7b87; --ae: #6f9cff; --ghsl: #e070b8; --cut: #6f7b87; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--body); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 20px 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 16px; }
+h1 { font: 600 20px/1.2 var(--display); margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* flow strip */
+.flow { display: flex; align-items: stretch; overflow-x: auto; padding-bottom: 4px; }
+.flow button { flex: 1 0 128px; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: var(--fg); cursor: pointer; font: inherit; display: grid; gap: 2px; }
+.flow button[aria-current="step"] { border-color: var(--ae); background: color-mix(in srgb, var(--ae) 9%, var(--panel)); }
+.flow button:focus-visible { outline: 2px solid var(--ae); outline-offset: 2px; }
+.flow .k { font: 600 11px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.flow .t { font-weight: 600; font-size: 13px; }
+.flow .c { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.flow .arr { flex: 0 0 26px; display: grid; place-items: center; color: var(--muted); font-size: 10px; text-align: center; line-height: 1.1; }
+/* main */
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.mapbox { position: relative; background: #0b0f13; border-radius: 10px; overflow: hidden; aspect-ratio: 1 / 1; max-width: 100%; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.tip { position: absolute; pointer-events: none; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; font-size: 12px; max-width: 250px; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+.tip .k { color: var(--muted); }
+.maptools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 6px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.panel h2 { font: 600 17px/1.25 var(--display); margin: 0; text-wrap: balance; }
+.panel p { margin: 0; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stat .v { font: 600 18px/1.2 var(--mono); font-variant-numeric: tabular-nums; }
+.stat .l { color: var(--muted); font-size: 12px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--fg); padding: 5px 10px; font: 500 12px var(--body); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.seg button:focus-visible { outline: 2px solid var(--ae); outline-offset: -2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--c); border: 1px solid var(--b, transparent); }
+.src { color: var(--muted); font-size: 11px; font-family: var(--mono); word-break: break-word; }
+figure { margin: 0; } figcaption { color: var(--muted); font-size: 11px; margin-top: 4px; }
+svg.fig { width: 100%; height: auto; color: var(--fg); font-family: var(--body); overflow: visible; }
+.nav { display: flex; gap: 8px; }
+.nav button { flex: 1; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 7px; padding: 7px; font: 500 13px var(--body); cursor: pointer; }
+.nav button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.nav button:disabled { opacity: .4; cursor: default; }
+.nav button:focus-visible { outline: 2px solid var(--ae); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Ground truth flow</h1>
+    <p class="sub">From Overture footprints to tiles scored on each product's own grid. Map: one NYC window (Greenwich Village / Chelsea); numbers: all ten study boxes.</p>
+  </header>
+  <nav class="flow" id="flow" aria-label="Pipeline steps"></nav>
+  <div class="main">
+    <section>
+      <div class="mapbox" id="mb"><canvas id="map" aria-label="Map of the NYC window"></canvas><div class="tip" id="tip" hidden></div></div>
+      <div class="maptools">
+        <span>Hover for values · scroll to zoom · drag to pan</span>
+        <span class="seg" role="group" aria-label="Background"><button id="bg-esri" aria-pressed="true">Esri imagery</button><button id="bg-s2" aria-pressed="false">Sentinel-2 2018</button><button id="bg-none" aria-pressed="false">None</button></span>
+      </div>
+    </section>
+    <aside class="panel" id="panel" aria-live="polite"></aside>
+  </div>
+</div>
+
+<script>
+const D = __FLOW__;
+const M = D.meta, F = D.flow, FB = F.buildings;
+const fmt = v => Number(v).toLocaleString("en-US");
+const pct1 = v => (100 * v).toFixed(1) + "%";
+const sumB = (k, f) => Object.values(FB).reduce((s, r) => s + r[k][f], 0);
+const T = k => ({ res: sumB(k, "res"), nres: sumB(k, "nres"), a_res: sumB(k, "a_res"), a_nres: sumB(k, "a_nres") });
+const LAB = T("labelled"), PASS = T("passed"), KEPT = T("kept");
+const n = t => t.res + t.nres;
+const resA = t => t.a_res / (t.a_res + t.a_nres), resC = t => t.res / n(t);
+const short = r => r.replace(/_.*/, "");
+const AE = F.ae, GH = F.ghsl;
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let step = 0, grid = "ae", bg = "esri", rule = "three";
+const SC = g => rule === "three" ? (g === "ae" ? AE : GH).score : F.two[g];
+
+const STEPS = [
+  { id: "label", k: "1", t: "Label", c: () => fmt(n(LAB)), cl: "buildings",
+    h: "Label each footprint from its use tag",
+    p: () => `Overture ${M.release} footprints; OpenStreetMap use tags map to residential or non-residential. Footprints without a mapped tag are left out.`,
+    s: () => [[fmt(LAB.res), "residential, all boxes"], [fmt(LAB.nres), "non-residential, all boxes"], [pct1(resC(LAB)), "residential by count"], [pct1(resA(LAB)), "residential by area"]],
+    leg: [["var(--res)", "Residential"], ["var(--nres)", "Non-residential"], ["transparent", "No mapped tag (left out)", "#fff"]],
+    src: "datasets/building_bbox_grid/buildings.parquet · area: footprint in the box's UTM zone" },
+  { id: "filter", k: "2", t: "Filter", c: () => fmt(n(PASS)), cl: "scorable",
+    h: "Keep footprints both products can be scored on",
+    p: () => `A footprint stays when at least one AlphaEarth 10 m cell centre lies inside it and GHSL has a value there.`,
+    s: () => [[fmt(n(LAB) - n(PASS)), "footprints dropped"], [pct1((LAB.res - PASS.res) / (n(LAB) - n(PASS))), "of those are residential"], [pct1(resC(PASS)), "residential by count, after"], [pct1(resA(PASS)), "residential by area, after"]],
+    leg: [["var(--res)", "Residential, kept"], ["var(--nres)", "Non-residential, kept"], ["var(--cut)", "Dropped: no cell centre inside"]],
+    src: "week-6 stage_ae (cell centres inside footprint) ∩ GHSL coverage · run_week17_fixed_flow_tiles.py" },
+  { id: "area", k: "3", t: "Area 1:1", c: () => fmt(n(KEPT)), cl: "kept",
+    h: "Balance the two classes by footprint area, per box",
+    p: () => `In each box the class with more footprint area is shuffled (seed ${M.seed}) and kept in that order until its area first reaches the other class's.`,
+    s: () => [[pct1(resA(KEPT)), "residential by area"], [pct1(resC(KEPT)), "residential by count"], [`${fmt(KEPT.res)}`, "residential kept"], [`${fmt(KEPT.nres)}`, "non-residential kept"]],
+    fig: () => areaFig(),
+    leg: [["var(--res)", "Residential, kept"], ["var(--nres)", "Non-residential, kept"], ["transparent", "Cut by balancing", "#fff"], ["var(--cut)", "Dropped at step 2"]],
+    src: "bal_area in run_week17_fixed_flow_tiles.py · true areas in UTM" },
+  { id: "tiles", k: "4", t: "Tiles", c: () => `${fmt(AE.scope.n)} · ${fmt(GH.scope.n)}`, cl: "AE · GHSL", ctl: true,
+    h: "Tiles on each product's own grid",
+    p: () => `A tile is in scope when its centre lies inside a kept footprint. Truth is the share of the tile each class covers; the class is empty below ${Math.round(M.share_max * 100)}%, otherwise the larger share.`,
+    s: () => { const S = grid === "ae" ? AE.scope : GH.scope; return [[fmt(S.n), `${gname()} tiles in scope`], [fmt(S.res), "true residential"], [fmt(S.nres), "true non-residential"], [fmt(S.empty), `true empty (< ${Math.round(M.share_max * 100)}%)`]] },
+    leg: [["var(--res)", "True residential"], ["var(--nres)", "True non-residential"], ["var(--empty)", "True empty"]],
+    src: () => grid === "ae" ? "AlphaEarth 10 m UTM cells · truth: datasets/week4_pixel_gt (union of footprints ∩ cell)" : "GHS-BUILT-S E2018 10 m Mollweide cells · truth: union of footprints ∩ cell, same rule" },
+  { id: "tbal", k: "5", t: "Tiles 1:1", c: () => `${fmt(AE.score.n)} · ${fmt(GH.score.n)}`, cl: "AE · GHSL", ctl: true,
+    h: "Equal residential and non-residential tiles, per box and grid",
+    p: () => `Each grid is balanced on its own (seed ${M.seed}). Empty-truth tiles are left out.`,
+    s: () => { const S = grid === "ae" ? AE : GH; return [[fmt(S.score.n), `${gname()} tiles scored`], [fmt(S.score.res.n), "per class"], [fmt(S.scope.n - S.score.n), "in scope, not drawn"], [fmt(S.scope.empty), "empty-truth, left out"]] },
+    leg: [["var(--res)", "Residential, scored"], ["var(--nres)", "Non-residential, scored"], ["rgba(255,255,255,.12)", "Not drawn"]],
+    src: "bal_tiles in run_week17_fixed_flow_tiles.py" },
+  { id: "right", k: "6", t: "Count right", c: () => `${pct1(SC("ae").right / SC("ae").n)} · ${pct1(SC("ghsl").right / SC("ghsl").n)}`, cl: "AE · GHSL", ctl: true, rulectl: true,
+    h: "Count the tiles each product gets right",
+    p: () => (rule === "three" ? `Prediction class uses the same rule as the truth, so a tile the product calls empty (under ${Math.round(M.share_max * 100)}% built) is wrong.` :
+        `Only the residential vs non-residential call: the larger of the two predicted shares. A tile with no predicted building at all is wrong.`) +
+      ` AlphaEarth: XGBoost on the 64-d embedding, trained on the other nine boxes. GHSL: BUILT-S 2018 share with the NRES flag. Tiles never pair up across grids; only counts are compared.`,
+    s: () => [[`${fmt(SC("ae").right)} / ${fmt(SC("ae").n)}`, `AlphaEarth right (${pct1(SC("ae").right / SC("ae").n)})`], [`${fmt(SC("ghsl").right)} / ${fmt(SC("ghsl").n)}`, `GHSL right (${pct1(SC("ghsl").right / SC("ghsl").n)})`],
+      [fmt(GH.score.res.pred.empty + GH.score.nres.pred.empty), "GHSL tiles called empty"], [fmt(AE.score.res.pred.empty || 0), "AlphaEarth tiles called empty"]],
+    fig: () => rightFig(),
+    leg: () => [[grid === "ae" ? "var(--ae)" : "var(--ghsl)", "Right"], ["transparent", "Wrong", "#fff"]],
+    src: () => `${M.run}/summary.json · AlphaEarth model: folds/*/model.json` },
+];
+const gname = () => grid === "ae" ? "AlphaEarth" : "GHSL";
+
+// ---------- figures (inline SVG, theme via currentColor / tokens)
+function areaFig() {
+  const R = Object.entries(FB), W = 340, rh = 24, top = 18, L = 64, X1 = 272, H = top + R.length * rh + 4;
+  let g = `<defs><pattern id="hz" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="currentColor" stroke-width="1.1" opacity=".6"/></pattern></defs>`;
+  g += `<text x="${L}" y="11" font-size="10.5" opacity=".75">area after step 2 · hatched = cut</text><text x="${W}" y="11" text-anchor="end" font-size="10.5" opacity=".75">kept, each</text>`;
+  R.forEach(([name, r], i) => { const y = top + i * rh, mx = Math.max(r.passed.a_res, r.passed.a_nres), X = a => L + a / mx * (X1 - L);
+    g += `<text x="0" y="${y + 13}" font-size="11">${short(name)}</text>`;
+    [["res", "a_res", 2], ["nres", "a_nres", 11]].forEach(([c, a, dy]) => {
+      g += `<rect x="${L}" y="${y + dy}" width="${(X(r.kept[a]) - L).toFixed(1)}" height="8" style="fill:var(--${c})"/>`;
+      if (r.passed[a] > r.kept[a] + 1) g += `<rect x="${X(r.kept[a]).toFixed(1)}" y="${y + dy}" width="${(X(r.passed[a]) - X(r.kept[a])).toFixed(1)}" height="8" fill="url(#hz)" stroke="currentColor" stroke-width=".6"/>` });
+    g += `<text x="${W}" y="${y + 13}" text-anchor="end" font-size="10.5" class="num">${(r.kept.a_res / 1e6).toFixed(2)} km²</text>` });
+  return `<figure><svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Per box, residential and non-residential footprint area after balancing are equal; the larger class is cut">${g}</svg>` +
+    `<figcaption>Right: area per class after balancing (true km², equal for both classes). Houses are cut in ${R.filter(([, r]) => r.cut === "residential").length} boxes, non-residential in ${R.filter(([, r]) => r.cut !== "residential").map(([k]) => short(k)).join(", ")}.</figcaption></figure>` }
+function rightFig() {
+  const W = 340, L = 112, X1 = 290, rows = [["AlphaEarth", { score: SC("ae") }, "--ae"], ["GHSL", { score: SC("ghsl") }, "--ghsl"]], H = 18 + rows.length * 2 * 20 + 22, X = v => L + v * (X1 - L);
+  let g = "";
+  [0, .25, .5, .75, 1].forEach(v => g += `<line x1="${X(v)}" y1="12" x2="${X(v)}" y2="${H - 16}" stroke="currentColor" opacity=".12"/><text x="${X(v)}" y="${H - 4}" text-anchor="middle" font-size="10">${v * 100}%</text>`);
+  let y = 16;
+  rows.forEach(([nm, S, tok]) => [["res", "residential"], ["nres", "non-res"]].forEach(([c, lab]) => { const r = S.score[c].right / S.score[c].n;
+    g += `<text x="0" y="${y + 11}" font-size="11">${nm} · ${lab}</text><rect x="${L}" y="${y + 2}" width="${(X(r) - L).toFixed(1)}" height="12" style="fill:var(${tok})"/>` +
+      `<text x="${W}" y="${y + 12}" text-anchor="end" font-size="11" class="num">${pct1(r)}</text>`; y += 20 }));
+  return `<figure><svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Share of tiles right per true class: AlphaEarth residential ${pct1(SC("ae").res.right / SC("ae").res.n)}, non-residential ${pct1(SC("ae").nres.right / SC("ae").nres.n)}; GHSL residential ${pct1(SC("ghsl").res.right / SC("ghsl").res.n)}, non-residential ${pct1(SC("ghsl").nres.right / SC("ghsl").nres.n)}">${g}</svg>` +
+    `<figcaption>Share of scored tiles right, by true class, all ten boxes${rule === "three" ? "" : ", residential vs non-residential call only"}.</figcaption></figure>` }
+
+// ---------- map
+const cv = document.getElementById("map"), ctx = cv.getContext("2d"), mb = document.getElementById("mb"), tip = document.getElementById("tip");
+const img = { esri: new Image(), s2: new Image() }; img.esri.src = D.img.esri; img.s2.src = D.img.s2;
+let dpr = 1, size = 600, view = { k: 1, x: 0, y: 0 }, hatch = null, hover = null;
+function fit() { dpr = window.devicePixelRatio || 1; size = mb.clientWidth; cv.width = Math.round(size * dpr); cv.height = Math.round(size * dpr); hatch = null; draw() }
+const base = () => size / Math.max(M.width_m, M.height_m);
+const tx = p => [(p[0] * base() * view.k + view.x) * dpr, (p[1] * base() * view.k + view.y) * dpr];
+function path(r) { ctx.beginPath(); r.forEach((p, i) => { const [x, y] = tx(p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y) }); ctx.closePath() }
+function hex(h) { h = h.replace("#", ""); const v = parseInt(h, 16); return [v >> 16 & 255, v >> 8 & 255, v & 255] }
+const rgba = (tok, a) => { const [r, g, b] = hex(css(tok)); return `rgba(${r},${g},${b},${a})` };
+function mkHatch() { const c = document.createElement("canvas"); c.width = c.height = 8 * dpr; const g = c.getContext("2d");
+  g.strokeStyle = "rgba(255,255,255,.75)"; g.lineWidth = 1.2 * dpr; g.beginPath(); g.moveTo(0, 8 * dpr); g.lineTo(8 * dpr, 0); g.stroke(); return ctx.createPattern(c, "repeat") }
+const TILES = () => grid === "ae" ? D.ae : D.ghsl;
+function draw() {
+  const id = STEPS[step].id;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#0b0f13"; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (bg !== "none" && img[bg].complete) { const [x0, y0] = tx([0, 0]), [x1, y1] = tx([M.width_m, M.height_m]); ctx.imageSmoothingEnabled = bg === "esri"; ctx.drawImage(img[bg], x0, y0, x1 - x0, y1 - y0) }
+  ctx.fillStyle = "rgba(11,15,19,.45)"; ctx.fillRect(0, 0, cv.width, cv.height);
+  hatch = hatch || mkHatch();
+  const tileStep = id === "tiles" || id === "tbal" || id === "right";
+  D.buildings.forEach(b => b.rings.forEach(r => { path(r);
+    const lab = b.s === "res" || b.s === "nres", col = b.s === "res" ? "--res" : "--nres";
+    if (!tileStep) {
+      if (id === "label") { if (lab) { ctx.fillStyle = rgba(col, .62); ctx.fill() } }
+      else if (id === "filter") { if (lab) { ctx.fillStyle = b.ok ? rgba(col, .62) : rgba("--cut", .85); ctx.fill() } }
+      else if (id === "area") { if (lab) { if (!b.ok) { ctx.fillStyle = rgba("--cut", .85); ctx.fill() } else if (b.kept) { ctx.fillStyle = rgba(col, .62); ctx.fill() } else { ctx.fillStyle = hatch; ctx.fill() } } }
+    }
+    ctx.strokeStyle = tileStep ? (b.kept ? "rgba(255,255,255,.9)" : "rgba(255,255,255,.28)") : lab ? "rgba(255,255,255,.85)" : "rgba(255,255,255,.55)";
+    ctx.lineWidth = (tileStep && b.kept ? 1.3 : 1) * dpr; if (!lab && !tileStep) ctx.setLineDash([3 * dpr, 3 * dpr]); ctx.stroke(); ctx.setLineDash([]) }));
+  if (tileStep) TILES().forEach(t => { path(t.ring);
+    if (id === "tiles") { ctx.fillStyle = rgba(t.tc === "res" ? "--res" : t.tc === "nres" ? "--nres" : "--empty", .8); ctx.fill() }
+    else if (!t.bal) { ctx.fillStyle = "rgba(255,255,255,.08)"; ctx.fill() }
+    else if (id === "tbal") { ctx.fillStyle = rgba(t.tc === "res" ? "--res" : "--nres", .85); ctx.fill() }
+    else if (rule === "three" ? t.ok : t.ok2) { ctx.fillStyle = rgba(grid === "ae" ? "--ae" : "--ghsl", .85); ctx.fill() }
+    else { ctx.fillStyle = hatch; ctx.fill() }
+    ctx.strokeStyle = "rgba(11,15,19,.55)"; ctx.lineWidth = .6 * dpr; ctx.stroke() });
+  if (hover) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.4 * dpr; (hover.t ? [hover.t.ring] : hover.b.rings).forEach(r => { path(r); ctx.stroke() }) }
+  scale();
+}
+function scale() {
+  const m = 50 / Math.cos((M.window[1] + M.window[3]) / 2 * Math.PI / 180), Lp = m * base() * view.k * dpr, X = 12 * dpr, Y = cv.height - 14 * dpr;
+  ctx.fillStyle = "rgba(11,15,19,.75)"; ctx.fillRect(X - 6 * dpr, Y - 19 * dpr, Lp + 12 * dpr, 26 * dpr);
+  ctx.fillStyle = "#fff"; ctx.fillRect(X, Y, Lp, 3 * dpr); ctx.font = `${11 * dpr}px ${css("--mono")}`; ctx.fillText("50 m", X, Y - 6 * dpr) }
+function inside(pt, ring) { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [xi, yi] = ring[i], [xj, yj] = ring[j];
+  if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c } return c }
+const pc = v => v == null ? "–" : Math.round(100 * v) + "%";
+const CL = { res: "residential", nres: "non-residential", empty: "empty", nodata: "no data" };
+function showTip(e) {
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const p = [((mx - view.x) / view.k) / base(), ((my - view.y) / view.k) / base()], id = STEPS[step].id;
+  hover = null;
+  if (id === "tiles" || id === "tbal" || id === "right") { const t = TILES().find(t => inside(p, t.ring)); if (t) hover = { t } }
+  if (!hover) { const b = D.buildings.find(b => b.rings.some(rr => inside(p, rr))); if (b) hover = { b } }
+  draw();
+  if (!hover) { tip.hidden = true; return }
+  if (hover.t) { const t = hover.t;
+    tip.innerHTML = `<b>${gname()} tile</b><br><span class="k">truth</span> res ${pc(t.tr)} · non-res ${pc(t.tn)} → <b>${CL[t.tc]}</b>` +
+      `<br><span class="k">${gname()}</span> res ${pc(t.pr)} · non-res ${pc(t.pn)} → <b>${CL[t.pc]}</b>` +
+      `<br>${t.bal ? ((rule === "three" ? t.ok : t.ok2) ? "<b>right</b>" : "<b>wrong</b>") : "<span class='k'>not drawn in the 1:1 sample</span>"}`;
+  } else { const b = hover.b, lab = b.s === "res" || b.s === "nres";
+    tip.innerHTML = `<b>${lab ? CL[b.s] : "left out"}</b> · tag <code>${b.cls || "none"}</code><br><span class="k">footprint</span> ${fmt(Math.round(b.area_true || b.area))} m²` +
+      (!lab ? `<br>${b.s === "untagged" ? "no use tag" : "tag not in the mapping"}` : !b.ok ? `<br>dropped at step 2: no AlphaEarth cell centre inside` : b.kept ? `<br>kept after area balancing` : `<br>cut by area balancing (seed ${M.seed})`);
+  }
+  tip.hidden = false; const tw = tip.offsetWidth, th = tip.offsetHeight;
+  tip.style.left = Math.max(4, Math.min(mx + 14, r.width - tw - 6)) + "px"; tip.style.top = Math.max(4, Math.min(my + 14, r.height - th - 6)) + "px";
+}
+let drag = null;
+cv.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y }; cv.setPointerCapture(e.pointerId) });
+cv.addEventListener("pointermove", e => { if (drag) { view.x = drag.vx + e.clientX - drag.x; view.y = drag.vy + e.clientY - drag.y; tip.hidden = true; draw() } else showTip(e) });
+cv.addEventListener("pointerup", () => drag = null);
+cv.addEventListener("pointerleave", () => { hover = null; tip.hidden = true; draw() });
+cv.addEventListener("wheel", e => { e.preventDefault(); const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  const k = Math.min(10, Math.max(1, view.k * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); view.x = mx - (mx - view.x) * k / view.k; view.y = my - (my - view.y) * k / view.k; view.k = k; draw() }, { passive: false });
+
+// ---------- UI
+const flowEl = document.getElementById("flow"), panel = document.getElementById("panel");
+const val = x => typeof x === "function" ? x() : x;
+function renderFlow() {
+  flowEl.innerHTML = STEPS.map((s, i) => (i ? `<span class="arr" aria-hidden="true">→</span>` : "") +
+    `<button data-i="${i}" ${i === step ? 'aria-current="step"' : ""}><span class="k">Step ${s.k}</span><span class="t">${s.t}</span><span class="c">${val(s.c)} <span>${s.cl}</span></span></button>`).join("");
+  flowEl.querySelectorAll("button").forEach(b => b.onclick = () => go(+b.dataset.i));
+}
+function go(i) {
+  step = Math.max(0, Math.min(STEPS.length - 1, i)); const s = STEPS[step]; hover = null; tip.hidden = true;
+  renderFlow();
+  panel.innerHTML = `<h2>${s.h}</h2>` +
+    (s.ctl ? `<span class="seg" role="group" aria-label="Grid"><button data-g="ae" aria-pressed="${grid === "ae"}">AlphaEarth grid</button><button data-g="ghsl" aria-pressed="${grid === "ghsl"}">GHSL grid</button></span>` : "") +
+    (s.rulectl ? ` <span class="seg" role="group" aria-label="Scoring rule"><button data-r="three" aria-pressed="${rule === "three"}">With empty</button><button data-r="two" aria-pressed="${rule === "two"}">Res vs non-res only</button></span>` : "") +
+    `<p>${val(s.p)}</p><div class="stats">${val(s.s).map(([v, l]) => `<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("")}</div>` +
+    (s.fig ? s.fig() : "") +
+    `<div class="legend">${val(s.leg).map(([c, l, b]) => `<span style="--c:${c};--b:${b || "transparent"}">${l}</span>`).join("")}</div>` +
+    `<p class="src">${val(s.src)}</p>` +
+    `<div class="nav"><button id="prev" ${step === 0 ? "disabled" : ""}>Previous</button><button id="next" class="primary">${step === STEPS.length - 1 ? "Back to start" : "Next step"}</button></div>`;
+  panel.querySelectorAll("[data-g]").forEach(b => b.onclick = () => { grid = b.dataset.g; go(step) });
+  panel.querySelectorAll("[data-r]").forEach(b => b.onclick = () => { rule = b.dataset.r; go(step) });
+  document.getElementById("prev").onclick = () => go(step - 1);
+  document.getElementById("next").onclick = () => go(step === STEPS.length - 1 ? 0 : step + 1);
+  draw();
+}
+[["esri", "bg-esri"], ["s2", "bg-s2"], ["none", "bg-none"]].forEach(([k, id]) => document.getElementById(id).onclick = () => { bg = k;
+  ["bg-esri", "bg-s2", "bg-none"].forEach(x => document.getElementById(x).setAttribute("aria-pressed", x === id)); draw() });
+document.addEventListener("keydown", e => { if (e.key === "ArrowRight") go(step + 1); if (e.key === "ArrowLeft") go(step - 1) });
+Object.values(img).forEach(im => im.onload = draw);
+window.addEventListener("resize", fit);
+go(0); fit();
+</script>

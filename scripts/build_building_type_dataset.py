@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "outputs" / "building_type_dataset"
 LEGACY = ROOT / "outputs" / "sota_building_type"
 
-RELEASE = "2026-08-19.0"
+RELEASE = "2026-10-21.0"
 BUILDINGS = f"s3://overturemaps-us-west-2/release/{RELEASE}/theme=buildings/type=building/*"
 EMBED_YEAR = 2024
 # Natural Track-A mix (no per-class polygon cap). Optional random cap via --max-per-region.

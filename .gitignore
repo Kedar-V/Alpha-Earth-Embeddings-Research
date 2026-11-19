@@ -52,3 +52,19 @@ output.png
 .agents/
 .codex/
 .slides/
+
+# Runtime logs / pids
+**/*.pid
+**/logs/**/*.log
+**/logs/**/*.pid
+week4/international_geo_generalization/logs_dash_tmp.txt
+week4/international_geo_generalization/viz/usa_embedding_globe/logs/
+
+# Local packages / recordings / agent caches
+*.deb
+*.m4a
+*.wav
+.claude/
+.superpowers/
+avoid-ai-writing/
+.cursor/skills/avoid-ai-writing/

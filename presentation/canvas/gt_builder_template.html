@@ -1,0 +1,894 @@
+<title>From Footprints to Pixels</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: map canvas on the left, step rail + live numbers on the right; stacks on phones */
+:root {
+  --bg: #F4F6F7; --panel: #FFFFFF; --ink: #0B2238; --muted: #52606F; --line: #D7DEE3;
+  --res: #2B9DB0; --nres: #C27A2C; --excl: #8A93A0; --mixed: #7A4FC0; --ghsl: #B0368E; --accent: #0057A0; --empty: #C9CFD4;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0E1820; --panel: #15222D; --ink: #E7EEF3; --muted: #9AAAB8; --line: #2A3A48;
+  --res: #4FC0D2; --nres: #E39A4C; --excl: #7D8794; --mixed: #A685E6; --ghsl: #E06BBE; --accent: #5FA8E8; --empty: #BCC4CB; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0E1820; --panel: #15222D; --ink: #E7EEF3; --muted: #9AAAB8; --line: #2A3A48;
+  --res: #4FC0D2; --nres: #E39A4C; --excl: #7D8794; --mixed: #A685E6; --ghsl: #E06BBE; --accent: #5FA8E8; --empty: #BCC4CB; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 32px }
+.wrap { max-width: 1280px; margin: 0 auto; display: grid; gap: 16px }
+header h1 { font-size: clamp(22px, 3vw, 30px); margin: 0; letter-spacing: -0.01em; text-wrap: balance }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 75ch }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px }
+.chip { font: 500 12px/1 var(--mono); padding: 6px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--panel) }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start }
+@media (max-width: 900px) { .main { grid-template-columns: 1fr } }
+.mapbox { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-width: 0 }
+.mapbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden }
+.seg button { font: 500 13px var(--sans); background: transparent; color: var(--ink); border: 0; padding: 6px 10px; cursor: pointer }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel) }
+.seg button + button { border-left: 1px solid var(--line) }
+label.ctl { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted) }
+.canvas-wrap { position: relative; width: 100%; aspect-ratio: 1 / 0.99; max-width: 100%; border-radius: 6px; overflow: hidden; background: #000; touch-action: none }
+canvas { width: 100%; height: 100%; display: block; cursor: grab }
+canvas:active { cursor: grabbing }
+.tip { position: absolute; pointer-events: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; font-size: 12.5px; line-height: 1.45; max-width: 260px; box-shadow: 0 6px 18px rgb(0 0 0 / .18) }
+.tip b { font-weight: 600 } .tip .k { color: var(--muted) } .tip code { font-family: var(--mono); font-size: 11.5px }
+.mapfoot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 8px; color: var(--muted); font-size: 12px }
+aside { display: grid; gap: 12px; min-width: 0 }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0 }
+ol.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px }
+ol.steps button { width: 100%; text-align: left; display: grid; grid-template-columns: 28px 1fr; gap: 8px; align-items: center;
+  background: transparent; border: 0; border-radius: 8px; padding: 7px 8px; color: var(--ink); font: 500 14px var(--sans); cursor: pointer }
+ol.steps button .n { font: 600 12px var(--mono); width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--line); color: var(--muted) }
+ol.steps button[aria-current="step"] { background: color-mix(in srgb, var(--accent) 12%, transparent) }
+ol.steps button[aria-current="step"] .n { background: var(--accent); color: #fff; border-color: var(--accent) }
+ol.steps button:focus-visible, .seg button:focus-visible, .nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+h2 { font-size: 18px; margin: 0 0 6px; text-wrap: balance }
+.body p { margin: 0 0 8px; color: var(--ink) }
+.body .src { font-size: 12px; color: var(--muted) }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px }
+.stat { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px }
+.stat .v { font: 600 20px var(--mono); font-variant-numeric: tabular-nums }
+.stat .l { font-size: 12px; color: var(--muted) }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); margin-top: 10px }
+.legend span::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--c); border: 1px solid var(--b, transparent) }
+.nav { display: flex; gap: 8px }
+.nav button { flex: 1; font: 600 14px var(--sans); padding: 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer }
+.nav button.primary { background: var(--accent); color: #fff; border-color: var(--accent) }
+.nav button:disabled { opacity: .45; cursor: default }
+.spark { display: block; margin-top: 4px }
+table.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; margin-top: 10px }
+table.tbl th { text-align: left; color: var(--muted); font-weight: 500; padding: 4px 6px; vertical-align: bottom }
+table.tbl td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top }
+table.tbl td.n, table.tbl th.n { text-align: right; white-space: nowrap }
+table.tbl tr.hl td { font-weight: 600 }
+.chipset { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 10px }
+.chipset button { font: 500 12px var(--sans); padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer }
+.chipset button[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink) }
+.thumb { position: relative; margin-top: 8px; border-radius: 6px; overflow: hidden; line-height: 0 }
+.thumb img { width: 100%; display: block }
+.thumb svg { position: absolute; inset: 0; width: 100%; height: 100% }
+.fig { display: block; width: 100%; height: auto; margin-top: 8px; overflow: visible }
+.fig text { font: 11px var(--sans); fill: var(--muted) }
+.fig text.ink { fill: var(--ink); font-weight: 600 }
+.note { font-size: 12.5px; color: var(--muted); border-left: 3px solid var(--line); padding-left: 8px; margin: 8px 0 }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>From Footprints to Pixels</h1>
+    <p>How a 300 m patch of Greenwich Village becomes training labels for AlphaEarth and a test for GHSL, from the choice of cities to the final scores. Every layer and number is the project's real data; step through it below.</p>
+    <div class="chips" id="chips"></div>
+  </header>
+  <div class="main">
+    <section class="mapbox" aria-label="Map">
+      <div class="mapbar">
+        <div class="seg" role="group" aria-label="Background imagery">
+          <button id="img-esri" aria-pressed="true">Aerial</button>
+          <button id="img-s2" aria-pressed="false">Sentinel-2 2018</button>
+          <button id="img-none" aria-pressed="false">None</button>
+        </div>
+        <label class="ctl" for="dim">Dim imagery <input id="dim" type="range" min="0" max="85" value="35"></label>
+        <button id="reset" class="seg" style="padding:6px 10px;background:transparent;color:var(--ink);font:500 13px var(--sans);cursor:pointer">Reset view</button>
+      </div>
+      <div class="canvas-wrap" id="cw"><canvas id="map" aria-label="Map of the NYC window"></canvas><div class="tip" id="tip" hidden></div></div>
+      <div class="mapfoot"><span id="scaleNote"></span><span id="attrib"></span></div>
+    </section>
+    <aside>
+      <div class="card"><ol class="steps" id="steps"></ol></div>
+      <div class="card body" id="body"></div>
+      <div class="nav"><button id="prev">Previous</button><button id="next" class="primary">Next step</button></div>
+    </aside>
+  </div>
+</div>
+
+<script>
+const D = __DATA__;
+const A = __AUDIT__;
+const BAL = __BAL__;
+const M = D.meta;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COS = Math.cos(((M.window[1] + M.window[3]) / 2) * Math.PI / 180);   // Mercator metres -> true metres
+const fmt = (v, d = 0) => v == null ? "–" : Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = v => v == null ? "–" : Math.round(v * 100) + "%";
+const pct1 = v => v == null ? "–" : (v * 100).toFixed(1) + "%";
+const sum = (a, f = x => x) => a.reduce((s, x) => s + f(x), 0);
+
+// ---------- derived numbers (all from the embedded real data)
+const B = D.buildings, CELLS = D.cells, G = D.ghsl;
+const cnt = M.counts, st = M.strata;
+const reasons = {};
+B.filter(b => b.status === "excluded").forEach(b => { reasons[b.reason] = (reasons[b.reason] || 0) + 1 });
+const srcs = {}; B.forEach(b => { srcs[b.src] = (srcs[b.src] || 0) + 1 });
+const pure = CELLS.filter(c => (c.stratum === "res" || c.stratum === "nres") && c.g_fr != null);
+const gAgree = pure.filter(c => (c.g_fr >= c.g_fn ? "res" : "nres") === c.stratum && (c.g_fr + c.g_fn) > 0).length;
+const gNone = pure.filter(c => c.g_fr + c.g_fn === 0).length;
+const aeCalls = CELLS.filter(c => c.p_res != null && (c.stratum === "res" || c.stratum === "nres"));
+const aeAgree = aeCalls.filter(c => (c.p_res >= 0.5 ? "res" : "nres") === c.stratum).length;
+const isFull = c => (c.fr >= M.full_threshold && c.fn === 0) || (c.fn >= M.full_threshold && c.fr === 0);
+const pureCells = CELLS.filter(c => c.stratum === "res" || c.stratum === "nres");
+const under50 = pureCells.filter(c => Math.max(c.fr, c.fn) < 0.5).length;
+const fullRes = CELLS.filter(c => c.stratum === "res" && isFull(c)).length, fullNres = CELLS.filter(c => c.stratum === "nres" && isFull(c)).length;
+const median = a => { const v = [...a].sort((x, y) => x - y); return v.length ? v[Math.floor(v.length / 2)] : 0 };
+const inRes = B.filter(b => b.status === "res").map(b => b.n_inside), inNres = B.filter(b => b.status === "nres").map(b => b.n_inside);
+const zeroRes = inRes.filter(n => n === 0).length;
+const R_ = M.nyc_rule, nycFull = Math.min(R_.full_res, R_.full_nres);
+const TEST = B.filter(b => b.test && b.test.vr != null && b.test.gr != null);
+const clip = v => Math.min(1, Math.max(0, v));
+function errB(b, truth) { const t = b.test, gr = truth === "soft" ? t.sr : t.y, gn = truth === "soft" ? t.sn : 1 - t.y;
+  const e = (pr, pn) => 0.5 * (Math.abs(clip(pr) - gr) + Math.abs(clip(pn) - gn)); return { v: e(t.vr, t.vn), g: e(t.gr, t.gn) } }
+let pureRule = "any", truth = "soft", showCentres = false, view3 = "two", gridSel = "ae";
+let regSel = "NYC_NE", compSel = "window", gtSel = "cell", balSel = "pool", w16m = "class_bal", fixReg = "NYC_NE";
+const OG = M.own_grid;
+const tileErr = (pr, pn, gr, gn) => 0.5 * (Math.abs(Math.min(1, Math.max(0, pr)) - gr) + Math.abs(Math.min(1, Math.max(0, pn)) - gn));
+const AE_T = CELLS.filter(c => (c.fr + c.fn) > 0 && c.ae_pr != null);
+const GH_T = G.filter(g => g.in && (g.gt_r + g.gt_n) > 0 && g.ok);
+const decode3 = c => (c.fr + c.fn) < M.share_max ? "empty" : (c.fr >= c.fn ? "res" : "nres");   // week-3 rule
+const cls3 = (r, n) => (r + n) < M.share_max ? "empty" : (r >= n ? "res" : "nres");
+AE_T.forEach(c => { c.tc = cls3(c.fr, c.fn); c.pc = cls3(clip(c.ae_pr), clip(c.ae_pn)); c.ok3 = c.tc === c.pc });
+GH_T.forEach(g => { g.tc = cls3(g.gt_r, g.gt_n); g.pc = cls3(clip(g.fr), clip(g.fn)); g.ok3 = g.tc === g.pc });
+function tally(T) { const o = { n: T.length, right: T.filter(t => t.ok3).length };
+  ["res", "nres", "empty"].forEach(k => { const s = T.filter(t => t.tc === k); o[k] = [s.filter(t => t.ok3).length, s.length] });
+  const ks = ["res", "nres", "empty"].filter(k => o[k][1]); o.bal = ks.reduce((a, k) => a + o[k][0] / o[k][1], 0) / ks.length; return o }
+const TA = tally(AE_T), TG = tally(GH_T);
+// 1:1 tile balance, done separately on each product's own grid (seeded draw, same seed both grids)
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
+function balTiles(T, seed) {
+  const rnd = mulberry32(seed), K = ["res", "nres", "empty"], by = {}; K.forEach(k => by[k] = T.filter(t => t.tc === k));
+  const m = Math.min(...K.map(k => by[k].length)); T.forEach(t => t.inBal = false);
+  const o = { m, before: {}, right: {}, exp: 0 };
+  K.forEach(k => { const a = [...by[k]]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]] }
+    a.slice(0, m).forEach(t => t.inBal = true); o.before[k] = a.length; o.right[k] = a.slice(0, m).filter(t => t.ok3).length;
+    o.exp += m * (a.length ? a.filter(t => t.ok3).length / a.length : 0) });
+  o.n = 3 * m; o.r = K.reduce((s, k) => s + o.right[k], 0); return o }
+const BA = balTiles(AE_T, 42), BG = balTiles(GH_T, 42);
+function tileBalDiagram() {
+  const W = 340, H = 236, cols = [["AlphaEarth tiles", "10 m UTM grid", TA, BA, 12], ["GHSL tiles", "10 m Mollweide grid", TG, BG, 180]];
+  const mx = Math.max(TA.n, TG.n), bw = 148, K = [["res", "--res"], ["nres", "--nres"], ["empty", "--empty"]];
+  const bar = (x, y, counts, scale) => { let cx = x; return K.map(([k, v]) => { const w = counts[k] * scale; const s = `<rect x="${cx.toFixed(1)}" y="${y}" width="${Math.max(0, w - 1).toFixed(1)}" height="16" style="fill:var(${v})"/>` +
+      (w > 22 ? `<text x="${(cx + w / 2).toFixed(1)}" y="${y + 12}" text-anchor="middle" font-size="10" style="fill:#0b0f13">${counts[k]}</text>` : ""); cx += w; return s }).join("") };
+  const arrow = (x, y1, y2, lab) => `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2 - 2}" stroke="currentColor" marker-end="url(#tb-ar)"/><text x="${x + 6}" y="${(y1 + y2) / 2 + 4}" font-size="10.5">${lab}</text>`;
+  let g = `<defs><marker id="tb-ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L8,4L0,8z" fill="currentColor"/></marker></defs>`;
+  cols.forEach(([t1, t2, Tt, Bb, x]) => {
+    const cnt = { res: Tt.res[1], nres: Tt.nres[1], empty: Tt.empty[1] }, eq = { res: Bb.m, nres: Bb.m, empty: Bb.m };
+    g += `<text x="${x}" y="14" font-weight="600" font-size="12">${t1}</text><text x="${x}" y="28" font-size="10.5" opacity=".75">${t2}</text>` +
+      `<text x="${x}" y="46" font-size="10.5">all ${fmt(Tt.n)} tiles by true class</text>` + bar(x, 52, cnt, bw / mx) +
+      arrow(x + 10, 72, 112, `keep ${Bb.m} per class`).replace(/y="9[0-9.]+" font-size="10.5"/, 'y="88" font-size="10.5"') + `<text x="${x + 16}" y="104" font-size="10" opacity=".75">random, seed 42</text>` +
+      `<text x="${x}" y="126" font-size="10.5">${fmt(Bb.n)} tiles, 1:1:1</text>` + bar(x, 132, eq, bw / mx) +
+      arrow(x + 10, 152, 186, "count right") +
+      `<text x="${x}" y="204" font-weight="600" font-size="13">${Bb.r} / ${Bb.n} (${pct(Bb.r / Bb.n)})</text>` +
+      `<text x="${x}" y="220" font-size="10.5" opacity=".75">expected over draws ${pct(Bb.exp / Bb.n)}</text>`;
+  });
+  g += `<line x1="170" y1="40" x2="170" y2="224" stroke="currentColor" stroke-dasharray="3 3" opacity=".5"/><text x="170" y="234" text-anchor="middle" font-size="10" opacity=".75">no tile is paired across grids</text>`;
+  return `<figure style="margin:10px 0 0"><svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Each grid is balanced to equal residential, non-residential and empty tiles on its own, then the right tiles are counted: AlphaEarth ${BA.r} of ${BA.n}, GHSL ${BG.r} of ${BG.n}">${g}</svg>` +
+    `<figcaption class="src">Each product's tiles are balanced on its own grid, then counted. The two counts are compared; tiles are never matched one to one.</figcaption></figure>` }
+let ownMetric = "right";
+const c3 = { res: 0, nres: 0, empty: 0 }; CELLS.forEach(c => c3[decode3(c)]++);
+const c3partEmpty = CELLS.filter(c => decode3(c) === "empty" && (c.fr + c.fn) > 0).length;
+const EH = M.empty_head, W3 = M.week3_nyc;
+const emptyShare = c => Math.max(0, 1 - c.fr - c.fn);
+const val = x => typeof x === "function" ? x() : x;
+
+// geometry helpers on the real rings
+function inside(pt, ring) { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+  const [xi, yi] = ring[i], [xj, yj] = ring[j]; if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c } return c }
+function cellCentre(c) { const r = c.ring; return [(r[0][0] + r[2][0]) / 2, (r[0][1] + r[2][1]) / 2] }
+const inB = (p, b) => b.rings.some(r => inside(p, r));
+
+// building GT (week 6+): soft truth = mean coverage of the AlphaEarth cells whose centre is inside the footprint
+const LAB = B.filter(b => b.status !== "excluded");
+LAB.forEach(b => { const cs = CELLS.filter(c => inB(cellCentre(c), b)); b.nIn = cs.length;
+  b.soft = cs.length ? { r: sum(cs, c => c.fr) / cs.length, n: sum(cs, c => c.fn) / cs.length } : null });
+// footprints crossing the window edge only have some of their cells loaded here; whether a footprint has a cell
+// centre inside at all comes from the stored per-building count (week 6 stage_ae, whole footprint)
+const CX = CELLS.flatMap(c => c.ring.map(q => q[0])), CY = CELLS.flatMap(c => c.ring.map(q => q[1]));
+const CX0 = Math.min(...CX), CX1 = Math.max(...CX), CY0 = Math.min(...CY), CY1 = Math.max(...CY);
+LAB.forEach(b => { b.edge = b.rings.some(r => r.some(q => q[0] < CX0 || q[0] > CX1 || q[1] < CY0 || q[1] > CY1));
+  const w = BAL.window[b.id]; b.nStored = w ? w.n : b.nIn; b.noCentre = b.nStored === 0 });
+const noSoft = { res: LAB.filter(b => b.status === "res" && b.noCentre).length, nres: LAB.filter(b => b.status === "nres" && b.noCentre).length };
+const edgeN = LAB.filter(b => b.edge).length;
+// training cells each footprint contributes (building_ids of the balanced week-4 cells; split when a cell touches several)
+const KEPT = {}; CELLS.forEach(c => { if (c.bids) c.bids.forEach(id => { KEPT[id] = (KEPT[id] || 0) + 1 / c.bids.length }) });
+LAB.forEach(b => { b.kept = KEPT[b.id] || 0 });
+const keptMax = Math.max(1, ...LAB.map(b => b.kept));
+const keptTop = [...LAB].sort((a, b) => b.kept - a.kept);
+const keptCls = s => { const v = LAB.filter(b => b.status === s).map(b => b.kept).sort((a, b) => b - a); const t = sum(v);
+  const k = Math.max(1, Math.round(v.length * 0.1)); return { n: v.length, cells: t, top10: t ? sum(v.slice(0, k)) / t : 0, zero: v.filter(x => x === 0).length } };
+// pure cells sitting on an untagged footprint (centre or a corner inside it): counted as empty, so mixing is hidden
+const EXCL = B.filter(b => b.status === "excluded");
+const onUntagged = c => [cellCentre(c), ...c.ring.slice(0, 4)].some(p => EXCL.some(b => inB(p, b)));
+const pureOnUntagged = pureCells.filter(onUntagged).length;
+
+// metro-wide numbers from the audit
+const RG = A.regions, RGx = Object.fromEntries(RG.map(r => [r.name, r]));
+const TOT = { b_res: sum(RG, r => r.b_res), b_nres: sum(RG, r => r.b_nres), cells: sum(RG, r => r.cells), c_res: sum(RG, r => r.c_res),
+  c_nres: sum(RG, r => r.c_nres), c_mixed: sum(RG, r => r.c_mixed), kept: sum(RG, r => r.kept), t_res: sum(RG, r => r.t_res), t_nres: sum(RG, r => r.t_nres) };
+const CA = A.composition.all, CL = A.clustering, BL = A.balancing, TS = A.test;
+const short = n => n.replace(/_.*/, "");
+const sc = k => TS.scores.find(s => s.key === k);
+
+document.getElementById("chips").innerHTML = [
+  `Overture ${M.release}`, `AlphaEarth 10 m · UTM 18N`, `GHS-BUILT-S + NRES E2018 · Mollweide`,
+  `${(M.width_m * COS).toFixed(0)} × ${(M.height_m * COS).toFixed(0)} m`].map(t => `<span class="chip">${t}</span>`).join("");
+
+// ---------- small SVG figures for the side panel
+function ternary(mode) {
+  const W = 340, H = 300, P = 26, R = [P, H - P], N = [W - P, H - P], E = [W / 2, P + 6];
+  const pt = (fr, fn) => { const fe = Math.max(0, 1 - fr - fn); return [fr * R[0] + fn * N[0] + fe * E[0], fr * R[1] + fn * N[1] + fe * E[1]] };
+  const col = { res: "var(--res)", nres: "var(--nres)", mixed: "var(--mixed)", empty: "var(--muted)" };
+  let g = "";
+  [0.25, 0.5, 0.75].forEach(e => { const a = pt((1 - e), 0), b = pt(0, 1 - e);
+    g += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" style="stroke:var(--line)" stroke-dasharray="3 3"/><text x="${b[0] + 6}" y="${b[1] + 4}">${e * 100}% empty</text>` });
+  g += `<polygon points="${[R, N, E].map(p => p.join(",")).join(" ")}" style="fill:none;stroke:var(--muted)"/>`;
+  if (mode === "window") {
+    const cs = CELLS.filter(c => c.fr + c.fn > 0);
+    cs.forEach(c => { const [x, y] = pt(c.fr, c.fn); g += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.3" style="fill:${col[c.stratum]};opacity:.7"/>` });
+  } else {
+    const bins = CA.tern, mx = Math.max(...bins.map(b => b[2]));
+    bins.forEach(([fr, fn, n, k]) => { const [x, y] = pt(fr, fn); const r = 1.2 + 10 * Math.sqrt(n / mx);
+      g += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" style="fill:${col[k]};opacity:.65"><title>${fmt(n)} cells</title></circle>` });
+  }
+  g += `<text class="ink" x="${R[0] - 4}" y="${R[1] + 18}">Residential</text><text class="ink" x="${N[0] + 4}" y="${N[1] + 18}" text-anchor="end">Non-residential</text>` +
+       `<text class="ink" x="${E[0]}" y="${E[1] - 8}" text-anchor="middle">Empty</text>`;
+  return `<svg class="fig" viewBox="0 0 ${W} ${H + 4}" role="img" aria-label="Ternary plot of residential, non-residential and empty shares per cell">${g}</svg>`;
+}
+function emptyBars(mode) {
+  const edges = [0, 0.01, 0.25, 0.5, 0.75, 1.0001];
+  const winBins = s => { const cs = CELLS.filter(c => c.stratum === s); return edges.slice(0, -1).map((lo, i) => cs.filter(c => emptyShare(c) >= lo && emptyShare(c) < edges[i + 1]).length / Math.max(1, cs.length)) };
+  const rows = [["res", "Pure residential"], ["nres", "Pure non-residential"], ["mixed", "Mixed"]];
+  const data = rows.map(([k]) => mode === "window" ? winBins(k) : CA.empty_bins[k]);
+  const labs = ["full", "<25%", "25–50%", "50–75%", ">75%"];
+  const W = 340, x0 = 118, bw = W - x0 - 4, rh = 22;
+  let g = labs.map((l, i) => `<rect x="${i * 64}" y="0" width="10" height="10" style="fill:color-mix(in srgb, var(--ink) ${12 + i * 20}%, var(--panel))"/><text x="${i * 64 + 13}" y="9">${l}</text>`).join("");
+  rows.forEach(([k, l], r) => { let x = x0; const y = 18 + r * (rh + 6);
+    g += `<text x="0" y="${y + 15}" class="ink">${l}</text>`;
+    data[r].forEach((v, i) => { const w = v * bw; g += `<rect x="${x}" y="${y}" width="${Math.max(0, w - 1)}" height="${rh}" style="fill:color-mix(in srgb, var(--ink) ${12 + i * 20}%, var(--panel))"><title>${labs[i]} empty: ${pct1(v)}</title></rect>`;
+      if (v >= 0.09) g += `<text x="${x + w / 2}" y="${y + 15}" text-anchor="middle" style="fill:${i >= 3 ? "var(--panel)" : "var(--ink)"}">${pct(v)}</text>`; x += w }) });
+  return `<svg class="fig" viewBox="0 0 ${W} ${18 + 3 * (rh + 6)}" role="img" aria-label="Share of each cell that is empty, by cell type">${g}</svg>`;
+}
+function lorenz() {
+  const W = 340, H = 210, L = 34, Bt = 26, T = 10, Rr = 10;
+  const lx = x => L + (Math.log10(x) + 3) / 3 * (W - L - Rr), ly = y => T + (1 - y) * (H - T - Bt);
+  let g = "";
+  [0.001, 0.01, 0.1, 1].forEach(x => g += `<line x1="${lx(x)}" x2="${lx(x)}" y1="${T}" y2="${H - Bt}" style="stroke:var(--line)"/><text x="${lx(x)}" y="${H - Bt + 14}" text-anchor="middle">${x * 100}%</text>`);
+  [0, 0.5, 1].forEach(y => g += `<line x1="${L}" x2="${W - Rr}" y1="${ly(y)}" y2="${ly(y)}" style="stroke:var(--line)"/><text x="${L - 4}" y="${ly(y) + 4}" text-anchor="end">${y * 100}%</text>`);
+  g += `<text x="${(L + W - Rr) / 2}" y="${H - 2}" text-anchor="middle">largest buildings first (share of buildings)</text>`;
+  g += `<polyline points="${[0.001, 0.01, 0.1, 1].map(x => `${lx(x)},${ly(x)}`).join(" ")}" style="fill:none;stroke:var(--muted)" stroke-dasharray="2 3"/>`;
+  [["residential", "var(--res)", "Residential"], ["non_residential", "var(--nres)", "Non-residential"]].forEach(([k, c, l]) => {
+    const p = CL[k].lorenz; g += `<polyline points="${p.map(([x, y]) => `${lx(x).toFixed(1)},${ly(y).toFixed(1)}`).join(" ")}" style="fill:none;stroke:${c};stroke-width:2.2"/>`;
+    const q = p.find(([x]) => x === 0.1); g += `<circle cx="${lx(0.1)}" cy="${ly(q[1])}" r="3" style="fill:${c}"/>`;
+    g += `<text x="${lx(0.1) + 7}" y="${ly(q[1]) + (k === "residential" ? 14 : -6)}" style="fill:${c};font-weight:600">${l}: top 10% give ${pct(q[1])}</text>` });
+  g += `<text x="${L + 4}" y="${T + 10}" class="ink">share of training cells</text>`;
+  return `<svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Concentration of training cells in the largest buildings">${g}</svg>`;
+}
+const tbl = (head, rows, hl) => `<div style="overflow-x:auto"><table class="tbl"><thead><tr>${head.map((h, i) => `<th class="${i ? "n" : ""}">${h}</th>`).join("")}</tr></thead><tbody>` +
+  rows.map((r, j) => `<tr class="${hl && hl(r, j) ? "hl" : ""}">${r.map((c, i) => `<td class="${i ? "n" : ""}">${c}</td>`).join("")}</tr>`).join("") + `</tbody></table></div>`;
+
+// ---------- steps
+const BT = BAL.total, BN = BAL.regions.find(r => r.name === "NYC_NE");
+const BAL_STAGES = [["labelled", "1. Labelled"], ["pool", "2. Balanced 1:1"], ["train", "3. Training"], ["test", "4. Frozen test"]];
+const BAL_ORD = { labelled: 1, pool: 2, train: 3, test: 4, fix: 9 }, BAL_REACH = { cut: 1, pool: 2, train: 3, test: 4 };
+const resC = t => pct(t.res / (t.res + t.nres)), resA = t => pct(t.a_res / (t.a_res + t.a_nres));
+const balReach = b => { const s = BAL.window[b.id]; return s ? BAL_REACH[s.s] : 0 };
+const W16 = BAL.w16, WA = W16.arms, WF = W16.filter;
+const FIXT = { res: WA.B.res, nres: WA.B.nres, a_res: WA.B.area_res, a_nres: WA.B.area_nres };
+const PASS = { res: WF.passed.res, nres: WF.passed.nres, a_res: WF.passed.area_res, a_nres: WF.passed.area_nres };
+const ARMS = [["A", "A. Today", "1:1 count, then filters"], ["C", "C. Filter → count", "filters, then 1:1 count"], ["B", "B. Filter → area", "filters, then 1:1 area"], ["Bw", "Bw. B + weights", "B, equal class weight"]];
+const W16M = { pooled: "Pooled (every building counts once)", class_bal: "Class-balanced (mean of res and non-res)", area_w: "Per m² (weighted by footprint area)" };
+function orderDiagram(hl) {
+  const W = 340, H = 280, cw = 156, cols = [
+    { x: 6, head: "Now (weeks 6–15)", n0: BT.labelled, steps: [
+      ["balance", "1:1 by building count", `cut ${fmt(BT.labelled.res - BT.pool.res)} houses`, BT.pool],
+      ["filter", "has soft, AE, GHSL, PLS", `drop ${fmt(BT.pool.res + BT.pool.nres - BT.test.res - BT.test.nres)} · ${pct((BT.pool.res - BT.test.res) / (BT.pool.res + BT.pool.nres - BT.test.res - BT.test.nres))} houses`, BT.test]] },
+    { x: 178, head: "Fix (week 16 rerun)", n0: BT.labelled, steps: [
+      ["filter", "has soft, AE, GHSL", `drop ${fmt(BT.labelled.res + BT.labelled.nres - PASS.res - PASS.nres)} · ${pct((BT.labelled.res - PASS.res) / (BT.labelled.res + BT.labelled.nres - PASS.res - PASS.nres))} houses`, PASS],
+      ["balance", "1:1 by footprint area", [`cut ${fmt(PASS.res - FIXT.res)} houses`, `and ${fmt(PASS.nres - FIXT.nres)} non-res`], FIXT]] }];
+  const node = (x, y, n, last) => `<rect x="${x}" y="${y}" width="${cw}" height="34" rx="4" fill="none" stroke="currentColor" stroke-width="${last ? 1.8 : 1}"/>` +
+    `<text x="${x + cw / 2}" y="${y + 14}" text-anchor="middle" font-size="11.5" font-weight="${last ? 600 : 400}">${fmt(n.res + n.nres)} buildings</text>` +
+    `<text x="${x + cw / 2}" y="${y + 28}" text-anchor="middle" font-size="10.5">${resC(n)} res by count · ${resA(n)} by area</text>`;
+  const box = (x, y, kind, lab) => { const bal = kind === "balance";
+    return `<rect x="${x + 4}" y="${y}" width="${cw - 8}" height="26" rx="13" style="fill:${bal ? "color-mix(in srgb, var(--accent) 22%, transparent)" : "none"};stroke:${bal ? "var(--accent)" : "currentColor"}" stroke-dasharray="${bal ? "" : "4 3"}"/>` +
+      `<text x="${x + cw / 2}" y="${y + 17}" text-anchor="middle" font-size="10.5" font-weight="600">${lab}</text>` };
+  const arr = (x, y1, y2, lab) => { const L = Array.isArray(lab) ? lab : lab ? [lab] : [], m = (y1 + y2) / 2 + 4 - (L.length - 1) * 6;
+    return `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2 - 1}" stroke="currentColor" marker-end="url(#od-ar)"/>` + L.map((s, i) => `<text x="${x + 6}" y="${m + i * 12}" font-size="10">${s}</text>`).join("") };
+  let g = `<defs><marker id="od-ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L8,4L0,8z" fill="currentColor"/></marker></defs>`;
+  cols.forEach((c, ci) => { const ax = c.x + 22, fix = ci === 1, op2 = fix && hl === "filter" ? 0.22 : 1;
+    g += `<text x="${c.x}" y="11" font-size="12" font-weight="600">${c.head}</text>` + node(c.x, 18, c.n0) + arr(ax, 52, 64) +
+      box(c.x, 64, c.steps[0][0], c.steps[0][1]) + arr(ax, 90, 122, c.steps[0][2]) + node(c.x, 122, c.steps[0][3]) +
+      `<g opacity="${op2}">` + arr(ax, 156, 168) + box(c.x, 168, c.steps[1][0], c.steps[1][1]) + arr(ax, 194, 226, c.steps[1][2]) + node(c.x, 226, c.steps[1][3], true) + `</g>`;
+    if (fix && (hl === "filter" || hl === "balance")) { const y0 = hl === "filter" ? 60 : 164;
+      g += `<rect x="${c.x - 3}" y="${y0}" width="${cw + 6}" height="100" rx="7" fill="none" style="stroke:var(--accent)" stroke-width="2"/>` } });
+  g += `<rect x="6" y="${H - 13}" width="22" height="11" rx="5.5" fill="none" stroke="currentColor" stroke-dasharray="4 3"/><text x="33" y="${H - 4}" font-size="10">filter</text>` +
+    `<rect x="78" y="${H - 13}" width="22" height="11" rx="5.5" style="fill:color-mix(in srgb, var(--accent) 22%, transparent);stroke:var(--accent)"/><text x="105" y="${H - 4}" font-size="10">balance</text>`;
+  return `<figure style="margin:10px 0 0"><svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="Today buildings are balanced by count and then filtered, which leaves ${resC(BT.test)} residential by count and ${resA(BT.test)} by area. The fix filters first and then balances by footprint area, which leaves ${resA(FIXT)} residential by area.">${g}</svg>` +
+    `<figcaption class="src">Left: what the pipeline does now. Right: the fix${hl === "filter" ? ", step 1 outlined" : hl === "balance" ? ", step 2 outlined" : ""}. The filters remove mostly houses, so running them after balancing undoes the balance.</figcaption></figure>` }
+const FR = BAL.fix_regions, FRx = Object.fromEntries(FR.map(r => [r.name, r]));
+const km2 = a => (a / 1e6).toFixed(2) + " km²";
+const isRes = r => r.cut === "residential";
+function areaBalFig(r) {
+  const W = 340, H = 214, L = 0, X0 = 4, X1 = 334, mx = Math.max(r.passed.a_res, r.passed.a_nres), X = a => X0 + a / mx * (X1 - X0);
+  const target = Math.min(r.passed.a_res, r.passed.a_nres), cutRes = isRes(r);
+  const row = (y, lab, sw, a, aKept) => `<text x="${L}" y="${y}" font-size="10.5">${lab}</text>` +
+    `<rect x="${X0}" y="${y + 4}" width="${(X(aKept) - X0).toFixed(1)}" height="14" style="fill:var(${sw})"/>` +
+    (a > aKept + 1 ? `<rect x="${X(aKept).toFixed(1)}" y="${y + 4}" width="${(X(a) - X(aKept)).toFixed(1)}" height="14" fill="url(#ab-h)" stroke="currentColor" stroke-width=".8"/>` : "");
+  let g = `<defs><pattern id="ab-h" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="currentColor" stroke-width="1.2" opacity=".7"/></pattern>` +
+    `<marker id="ab-ar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L8,4L0,8z" fill="currentColor"/></marker></defs>`;
+  g += `<text x="0" y="12" font-size="12" font-weight="600">${short(r.name)} after the filter</text>` +
+    row(30, `Residential · ${fmt(r.passed.res)} buildings · ${km2(r.passed.a_res)}`, "--res", r.passed.a_res, r.passed.a_res) +
+    row(64, `Non-residential · ${fmt(r.passed.nres)} buildings · ${km2(r.passed.a_nres)}`, "--nres", r.passed.a_nres, r.passed.a_nres) +
+    `<line x1="20" y1="90" x2="20" y2="118" stroke="currentColor" marker-end="url(#ab-ar)"/>` +
+    `<text x="28" y="101" font-size="10.5">shuffle the ${cutRes ? "residential" : "non-residential"} buildings (seed ${BAL.seed}),</text>` +
+    `<text x="28" y="114" font-size="10.5">keep them in order until their area reaches the line</text>` +
+    `<text x="0" y="138" font-size="12" font-weight="600">${short(r.name)} after area 1:1</text>` +
+    row(156, `Residential · ${fmt(r.area1.res)}${cutRes ? ` of ${fmt(r.passed.res)} kept` : " (all kept)"} · ${km2(r.area1.a_res)}`, "--res", r.passed.a_res, r.area1.a_res) +
+    row(190, `Non-residential · ${fmt(r.area1.nres)}${!cutRes ? ` of ${fmt(r.passed.nres)} kept` : " (all kept)"} · ${km2(r.area1.a_nres)}`, "--nres", r.passed.a_nres, r.area1.a_nres) +
+    [158, 192].map(y => `<line x1="${X(target).toFixed(1)}" y1="${y}" x2="${X(target).toFixed(1)}" y2="${y + 20}" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2"/>`).join("");
+  return `<figure style="margin:10px 0 0"><svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="${short(r.name)}: ${cutRes ? "residential" : "non-residential"} covers more footprint area, so it is cut at random until both classes cover ${km2(target)}">${g}</svg>` +
+    `<figcaption class="src">Bars are footprint area, on one scale. Hatched = cut. Dashed line = the smaller class's area, the target.</figcaption></figure>` }
+function armsFig() {
+  const W = 340, rowH = 34, top = 22, L = 112, R = 282, H = top + ARMS.length * rowH + 22;
+  const vals = ARMS.flatMap(([k]) => [WA[k].ae[w16m], WA[k].ghsl[w16m]]);
+  const lo = Math.floor(Math.min(...vals) * 20) / 20, hi = Math.ceil(Math.max(...vals) * 20) / 20, X = v => L + (v - lo) / (hi - lo) * (R - L);
+  let g = "";
+  for (let v = lo; v <= hi + 1e-9; v += 0.05) g += `<line x1="${X(v)}" y1="${top - 6}" x2="${X(v)}" y2="${H - 18}" stroke="currentColor" opacity=".15"/><text x="${X(v)}" y="${H - 6}" text-anchor="middle" font-size="10">${v.toFixed(2)}</text>`;
+  g += `<text x="${W}" y="12" text-anchor="end" font-size="10" opacity=".75">AE − GHSL</text><text x="${L}" y="12" font-size="10" opacity=".75">error (lower is better)</text>`;
+  ARMS.forEach(([k, l, sub], i) => { const y = top + i * rowH + 12, a = WA[k].ae[w16m], gh = WA[k].ghsl[w16m], d = a - gh;
+    g += `<text x="0" y="${y}" font-size="11" font-weight="600">${l}</text><text x="0" y="${y + 13}" font-size="9.5" opacity=".75">${sub}</text>` +
+      `<line x1="${X(Math.min(a, gh))}" y1="${y + 2}" x2="${X(Math.max(a, gh))}" y2="${y + 2}" stroke="currentColor" opacity=".45" stroke-width="2"/>` +
+      `<circle cx="${X(gh)}" cy="${y + 2}" r="5" style="fill:var(--ghsl)"/><circle cx="${X(a)}" cy="${y + 2}" r="5" style="fill:var(--accent)"/>` +
+      `<text x="${W}" y="${y + 6}" text-anchor="end" font-size="11" font-weight="600">${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(3)}</text>` });
+  return `<figure style="margin:8px 0 0"><svg class="fig" viewBox="0 0 ${W} ${H}" role="img" aria-label="${W16M[w16m]} error, AlphaEarth model vs GHSL, for four ways of balancing: GHSL is lower in every one">${g}</svg>` +
+    `<figcaption class="src"><span style="color:var(--accent)">●</span> AlphaEarth model (Ridge on mean embedding, leave-one-box-out) · <span style="color:var(--ghsl)">●</span> GHSL on the same buildings · ${W16M[w16m]}</figcaption></figure>` }
+const inFix = b => { const s = BAL.window[b.id]; return s ? s.b : -2 };
+const winFix = () => ({ res: B.filter(b => b.status === "res" && inFix(b) === 1).length, nres: B.filter(b => b.status === "nres" && inFix(b) === 1).length });
+const DROP = { res: BT.labelled.res - PASS.res, nres: BT.labelled.nres - PASS.nres };
+const winFail = () => ({ res: B.filter(b => b.status === "res" && inFix(b) === -1).length, nres: B.filter(b => b.status === "nres" && inFix(b) === -1).length });
+const winCut = () => B.filter(b => b.status !== "excluded" && inFix(b) === 0).length;
+const GHSL_WINS = ARMS.reduce((s, [k]) => s + ["pooled", "class_bal", "area_w"].filter(m => WA[k].ghsl[m] < WA[k].ae[m]).length, 0);
+const winAt = k => k === 9 ? winFix() : ({ res: B.filter(b => b.status === "res" && balReach(b) >= k).length, nres: B.filter(b => b.status === "nres" && balReach(b) >= k).length });
+const STEPS = [
+  { id: "src", t: "Where the data comes from", h: "From the world to ten study boxes", ctl: "region",
+    p: () => [`The study uses ten lon/lat rectangles, not city limits or metro areas. Each box keeps every Overture footprint whose centre is inside and whose use tag maps to a study label. The ten were hand-picked to spread across US regions; the repo does not record why these boxes or sizes.`,
+      regSel === "NYC_NE" ? `The "NYC" box is ${RGx.NYC_NE.w_km} × ${RGx.NYC_NE.h_km} km: Manhattan below the Bronx, parts of Brooklyn and Queens, and Hoboken and Jersey City across the Hudson. The dot marks this canvas's 300 m window.` :
+        `${short(regSel)} box: ${RGx[regSel].w_km} × ${RGx[regSel].h_km} km. Names such as "${regSel}" describe the region, not the boundary.`],
+    s: () => { const r = RGx[regSel]; return [[`${fmt(r.b_res)} · ${fmt(r.b_nres)}`, "labelled footprints: res · non-res"], [`${r.a_res_km2} · ${r.a_nres_km2} km²`, "footprint area: res · non-res"],
+      [`${fmt(r.c_res)} · ${fmt(r.c_nres)}`, "pure cells: res · non-res"], [`${fmt(r.t_res)} · ${fmt(r.t_nres)}`, "frozen test buildings: res · non-res"]] },
+    extra: () => { const r = RGx[regSel], t = r.thumb;
+      return `<div class="thumb"><img src="${t.img}" alt="Aerial view of the ${short(regSel)} study box"><svg viewBox="0 0 ${t.w} ${t.h}" aria-hidden="true">
+        <rect x="${t.box[0]}" y="${t.box[1]}" width="${t.box[2] - t.box[0]}" height="${t.box[3] - t.box[1]}" style="fill:none;stroke:#fff;stroke-width:2"/>
+        ${t.window ? `<circle cx="${t.window[0]}" cy="${t.window[1]}" r="5" style="fill:var(--accent);stroke:#fff;stroke-width:2"/>` : ""}</svg></div>
+        <p class="src" style="margin-top:4px">Box ${r.box.map(v => v.toFixed(2)).join(", ")} (W, S, E, N) · Esri World Imagery</p>` +
+        tbl(["Path, all ten boxes", "Count"], [
+          [`Overture ${A.release}, ten boxes`, `${fmt(sum(RG, r => r.area_km2))} km²`],
+          ["Footprints with a mapped tag (res · non-res)", `${fmt(TOT.b_res)} · ${fmt(TOT.b_nres)}`],
+          ["AlphaEarth cells touching them", fmt(TOT.cells)],
+          ["Pure cells (res · non-res)", `${fmt(TOT.c_res)} · ${fmt(TOT.c_nres)}`],
+          ["Mixed cells, set aside", fmt(TOT.c_mixed)],
+          ["Training cells after 1:1 per box", `${fmt(TOT.kept)} per class`],
+          ["Frozen test buildings (res · non-res)", `${fmt(TOT.t_res)} · ${fmt(TOT.t_nres)}`]]) },
+    src: "scripts/build_building_type_dataset.py (US_REGIONS, sample_region) · datasets/building_bbox_grid · datasets/week4_pixel_gt(_balanced)",
+    leg: [["#ffffff", "Overture footprint"]] },
+  { id: "snap", t: "Overture snapshot", h: "Start from what Overture has",
+    p: [`Every building footprint Overture's ${M.release} release holds in this window, read straight from the public bucket.`,
+        `Most outlines come from OpenStreetMap; each may carry a use tag (its <code>class</code>). Across the ten boxes, every labelled footprint's tag comes from OpenStreetMap.`],
+    s: [[fmt(M.n_buildings), "footprints in the window"], [fmt(srcs["OpenStreetMap"] || 0), "from OpenStreetMap"]],
+    src: "s3://overturemaps-us-west-2/release/" + M.release + "/theme=buildings", leg: [["#ffffff", "Overture footprint"]] },
+  { id: "label", t: "Label residential and not", h: "Turn tags into two classes",
+    p: [`Residential tags: ${A.res_classes.map(c => `<code>${c}</code>`).join(", ")}. Non-residential: ${A.nres_classes.length} tags including schools, offices, retail, warehouses, churches, hotels and civic buildings.`,
+        `Buildings with no tag, or a tag outside the mapping, are left out. They are never counted as non-residential, but their area later counts as "empty".`],
+    s: [[fmt(cnt.res || 0), "residential"], [fmt(cnt.nres || 0), "non-residential"], [fmt(cnt.excluded || 0), "left out"],
+        [Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 1).map(([k, v]) => `${v}`)[0] || "0", (Object.entries(reasons).sort((a, b) => b[1] - a[1])[0] || ["", ""])[0]]],
+    src: "scripts/build_building_type_dataset.py · CLASS_TO_LABEL",
+    leg: [["var(--res)", "Residential"], ["var(--nres)", "Non-residential"], ["var(--excl)", "Left out (no or unmapped tag)"]] },
+  { id: "grid", t: "Lay the 10 m grid", h: "Cut the map into AlphaEarth cells",
+    p: [`AlphaEarth gives one 64-number vector per 10 m cell on a UTM zone 18N grid (2024 embeddings). That grid is the unit we label.`,
+        `It sits slightly rotated against map north because UTM and web maps use different projections; that tilt is real.`],
+    s: [[fmt(M.n_cells), "10 m cells in the window"], ["10 m", "cell size"]],
+    src: "datasets/building_bbox_grid/building_cells.parquet", leg: [["transparent", "AlphaEarth 10 m cell", "#ffffff"]] },
+  { id: "cover", t: "Measure coverage", h: "How much of each cell is each class", ctl: "view",
+    p: () => view3 === "two" ? [`For every cell: residential share = area of residential footprints inside it ÷ 100 m², and the same for non-residential. What is left is the empty share: street, yard or untagged building.`,
+        `A cell is pure when only one class touches it, and mixed when both do. Pure does not mean full: a cell that is 10% apartment and 90% street still counts as pure residential. ${fmt(st.empty || 0)} cells touch no tagged building.`] : [
+        `Later weeks treat empty as a third class. Week 3's rule: a cell is empty when residential + non-residential cover less than ${Math.round(M.share_max * 100)}% of it; otherwise it takes whichever building class covers more.`,
+        `So thin slivers of building no longer count as residential or non-residential, and mixed cells go to their larger share. Week 11 instead predicts all three shares directly.`],
+    s: () => view3 === "two" ? [[fmt(st.res || 0), "pure residential cells"], [fmt(st.nres || 0), "pure non-residential"], [fmt(st.mixed || 0), "mixed cells"],
+        [`${fmt(under50)} / ${fmt(pureCells.length)}`, "pure cells less than half covered"]] : [
+        [fmt(c3.res), "residential cells"], [fmt(c3.nres), "non-residential cells"], [fmt(c3.empty), "empty cells"],
+        [fmt(c3partEmpty), "empty cells that touch a building sliver"]],
+    src: `Recomputed here; matches datasets/week4_pixel_gt for all ${fmt(M.n_stored)} stored cells (largest difference ${M.max_frac_diff})`,
+    leg: () => view3 === "three" ? LEG3_THREE : [["var(--res)", "Residential share"], ["var(--nres)", "Non-residential share"]] },
+  { id: "comp", t: "What a cell is made of", h: "Three shares per cell, not one label", ctl: "comp",
+    p: () => [`Each cell is a point in a triangle: residential, non-residential and empty shares add to 1. Pure cells sit on the two lower edges, mixed cells inside. ${compSel === "window" ? `In this window ${fmt(st.mixed || 0)} of ${fmt(CELLS.filter(c => c.fr + c.fn > 0).length)} building cells are mixed.` : `Across the ten boxes, ${pct1(CA.mixed / CA.n)} of ${fmt(CA.n)} cells are mixed (${fmt(CA.mixed)}).`}`,
+      `Empty is rarely zero. ${compSel === "window" ? "In this window" : "Across the ten boxes"}, a pure residential cell is on average ${pct(compSel === "window" ? sum(CELLS.filter(c => c.stratum === "res"), emptyShare) / Math.max(1, st.res) : CA.mean_empty.res)} empty and a pure non-residential cell ${pct(compSel === "window" ? sum(CELLS.filter(c => c.stratum === "nres"), emptyShare) / Math.max(1, st.nres) : CA.mean_empty.nres)}. The two classes differ in how full the cell is, so a model can learn "how much building" as a stand-in for "which kind".`,
+      `Mixed is undercounted: an untagged building counts as empty, not as the other class. In this window ${fmt(pureOnUntagged)} of ${fmt(pureCells.length)} pure cells also sit on an untagged footprint.`],
+    s: () => compSel === "window" ? [[fmt(st.res || 0), "pure residential"], [fmt(st.nres || 0), "pure non-residential"], [fmt(st.mixed || 0), "mixed"], [fmt(st.empty || 0), "no tagged building (top corner)"]] :
+      [[pct1(CA.pure_res / CA.n), "pure residential"], [pct1(CA.pure_nres / CA.n), "pure non-residential"], [pct1(CA.mixed / CA.n), "mixed"], [pct(CA.multi_building), "cells touching 2+ labelled footprints"]],
+    extra: () => ternary(compSel) + `<p class="src" style="margin:6px 0 0">${compSel === "window" ? "One dot per cell in this window." : "Circle area = number of cells; pure cells binned along each edge, mixed cells on a 10 × 10 lattice."} Cells with no tagged footprint were never part of the training pool.</p>` +
+      `<p style="margin:10px 0 0;font-weight:600">How much of each cell is empty</p>` + emptyBars(compSel),
+    src: "datasets/week4_pixel_gt/pixels.parquet (frac_res_full, frac_nres_full) · this window recomputed from the snapshot",
+    leg: [["var(--res)", "Residential share"], ["var(--nres)", "Non-residential share"], ["var(--empty)", "Empty share"]] },
+  { id: "twogt", t: "Two kinds of ground truth", h: "Cell truth and building truth are different targets", ctl: "gt",
+    p: () => gtSel === "cell" ? [`<b>A. Cell truth (weeks 3–5, classification).</b> The unit is one AlphaEarth cell. Only pure cells are used, labelled residential or non-residential by which class touches them; mixed cells are set aside. The model predicts a class per cell.`,
+      `This is the "within-building" view: almost every training cell lies inside or on the edge of one footprint.`] :
+      [`<b>B. Building truth (weeks 6–15, regression).</b> The unit is one footprint. Soft truth = the mean residential and non-residential shares of the AlphaEarth cells whose centre falls inside it; hard truth = 1 or 0 from its tag. Models predict shares and are scored by mean absolute error.`,
+       `A footprint with no AlphaEarth cell centre inside has no soft truth and drops out. Here that removes ${noSoft.res} of ${LAB.filter(b => b.status === "res").length} residential and ${noSoft.nres} of ${LAB.filter(b => b.status === "nres").length} non-residential footprints, mostly small houses.`],
+    s: () => gtSel === "cell" ? [[fmt(st.res || 0), "pure residential cells here"], [fmt(st.nres || 0), "pure non-residential cells here"], [fmt(TOT.kept * 2), "training cells, all boxes"], ["classification", "target"]] :
+      [[fmt(LAB.filter(b => !b.noCentre).length), "footprints with soft truth here"], [fmt(noSoft.res + noSoft.nres), "footprints with no cell centre inside"], [fmt(TS.n), "frozen test buildings, all boxes"], ["regression", "target (shares, MAE)"]],
+    extra: () => tbl(["", "A. Cell truth", "B. Building truth"], [
+      ["Unit", "10 m AlphaEarth cell", "Overture footprint"], ["Label", "res or non-res (pure cells)", "res and non-res shares; tag for hard truth"],
+      ["Grid", "AlphaEarth's", "soft: AlphaEarth's · hard: none"], ["Kept", "pure cells, 1:1 per box", "footprints with a cell centre, AE and GHSL coverage"],
+      ["Task", "classification", "regression"], ["Score", "F1 / accuracy per cell", "MAE per building, LORO"], ["Weeks", "3–5", "6–15"]]),
+    src: "datasets/week4_pixel_gt_balanced · docs/eval_protocol_apples_to_apples.md · outputs/week6_overture_polygon_mae",
+    leg: () => gtSel === "cell" ? [["var(--res)", "Pure residential cell"], ["var(--nres)", "Pure non-residential cell"], ["var(--mixed)", "Mixed, set aside"]] :
+      [["var(--res)", "Footprint truth: residential share"], ["var(--nres)", "Footprint truth: non-residential share"], ["var(--excl)", "No cell centre inside: dropped", "#ffffff"]] },
+  { id: "sample", t: "Sample cells (weeks 3–5)", h: "Cell truth: keep pure cells, balance the classes", ctl: "rule",
+    p: () => pureRule === "three" ? [
+        `Three classes (week 3): every cell gets a label from the ${Math.round(M.share_max * 100)}% rule, so empty becomes something the model learns rather than something it guesses around.`,
+        `Week 3 also sampled cells with no footprint at all as empty, capped at one per residential cell in each metro.`] : pureRule === "any" ? [
+        `Weeks 4–5 cell set: any pure cell is eligible; mixed cells are set aside. In each box the larger class is cut at random (seed 42) to the size of the smaller one. NYC has more residential cells, so residential cells are dropped.`,
+        `Balance is by cell count. Equal cells are not equal buildings or equal area: non-residential cells are fuller and come from far fewer, larger buildings (table).`] : [
+        `Stricter option: only cells completely covered by one class's footprints count, so every label is 100% one class with no street or untagged building inside.`,
+        `The cost is size and balance. Small houses rarely contain a whole 10 m cell, so residential becomes the limiting class and what survives leans towards large buildings.`],
+    s: () => pureRule === "three" ? [[fmt(c3.res), "residential cells here"], [fmt(c3.nres), "non-residential cells here"], [fmt(c3.empty), "empty cells here"],
+        [`${fmt(W3.residential)} · ${fmt(W3.non_residential)} · ${fmt(W3.empty)}`, "NYC in the week 3 set: res · non-res · empty"]] : pureRule === "any" ? [[`${fmt(M.kept.res)} / ${fmt(M.kept.res_all)}`, "residential cells kept here"], [`${fmt(M.kept.nres)} / ${fmt(M.kept.nres_all)}`, "non-residential kept here"],
+        [fmt(Math.min(R_.pure_res, R_.pure_nres)), "per class across NYC"], [fmt(st.mixed || 0), "mixed cells set aside"]] : [
+        [`${fmt(fullRes)} / ${fmt(st.res || 0)}`, "pure residential cells fully covered here"], [`${fmt(fullNres)} / ${fmt(st.nres || 0)}`, "pure non-residential fully covered"],
+        [`${fmt(nycFull)}`, `per class across NYC (was ${fmt(Math.min(R_.pure_res, R_.pure_nres))})`], [`${pct(R_.full_res / R_.pure_res)} vs ${pct(R_.full_nres / R_.pure_nres)}`, "NYC cells surviving: residential vs non-residential"]],
+    extra: () => pureRule !== "any" ? "" : (() => { const ny = BL.by_region.find(r => r.name === "NYC_NE");
+      return `<p style="margin:10px 0 0;font-weight:600">What "1:1" means depends on the unit</p>` + tbl(["Balance by", "NYC", "All boxes"], [
+        ["Cells (current): non-res built area ÷ res", `${ny.cell_area_ratio.toFixed(2)}×`, `${BL.cell_area_ratio.toFixed(2)}×`],
+        ["Cells (current): buildings behind them, res · non-res", `${fmt(ny.cell_bld_res)} · ${fmt(ny.cell_bld_nres)}`, `${fmt(CL.residential.buildings)} · ${fmt(CL.non_residential.buildings)}`],
+        ["Buildings: non-res area ÷ res area", `${ny.count_area_ratio.toFixed(1)}×`, `${Math.min(...BL.by_region.map(r => r.count_area_ratio)).toFixed(1)}–${Math.max(...BL.by_region.map(r => r.count_area_ratio)).toFixed(1)}×`],
+        ["Area: houses per non-res building", ny.area_bld_ratio.toFixed(1), `${Math.min(...BL.by_region.map(r => r.area_bld_ratio)).toFixed(1)}–${Math.max(...BL.by_region.map(r => r.area_bld_ratio)).toFixed(1)}`]], (r, j) => j < 2) +
+        `<p class="note">Balancing by building count would give non-residential about 5× the area and cells, which is why the cell set is balanced on cells (close to area). The class that gets cut differs: residential in ${RG.filter(r => r.cut === "residential").length} boxes, non-residential in ${RG.filter(r => r.cut !== "residential").map(r => short(r.name)).join(" and ")}. Box sizes differ too: ${fmt(RGx.LA_W.kept)} cells per class in LA, ${fmt(RGx.SF_W.kept)} in SF.</p>` })(),
+    src: () => pureRule === "three" ? "scripts/week3_pixel_3class_trainlib.py (decode_fractions) · datasets/week3_pixel_gt_v2" : pureRule === "any" ? "datasets/week4_pixel_gt_balanced (seed 42, 1:1 per box by cell count) · buildings.parquet footprint areas" : `Fully covered = coverage ≥ ${M.full_threshold} of one class and 0 of the other · NYC counts from datasets/week4_pixel_gt`,
+    leg: () => pureRule === "full" ? LEG4_FULL : pureRule === "three" ? LEG3_THREE :
+      [["var(--res)", "Pure residential, kept"], ["var(--nres)", "Pure non-residential, kept"], ["color-mix(in srgb, var(--res) 25%, transparent)", "Dropped by balancing"], ["var(--mixed)", "Mixed, set aside"]] },
+  { id: "bal", t: "Balance buildings (now)", h: "How the building sets are balanced today", ctl: "bal",
+    p: () => ({
+      labelled: [`Start from every tagged footprint in the ten boxes. Houses outnumber everything else about 9 to 1: ${fmt(BT.labelled.res)} residential vs ${fmt(BT.labelled.nres)} non-residential.`,
+        `By area the gap is smaller (${resA(BT.labelled)} residential), because non-residential buildings are much larger.`],
+      pool: [`Week 6 balances once, per box, <b>by building count</b>: keep every non-residential building and pick the same number of houses at random (seed ${BAL.seed}). In NYC ${fmt(BN.labelled.res)} houses become ${fmt(BN.pool.res)}.`,
+        `Count is now 50 / 50, but area is not: non-residential has ${(BT.pool.a_nres / BT.pool.a_res).toFixed(1)}× the footprint area. On the map, most houses are cut here.`],
+      train: [`Weeks 8–15 train on every balanced building that has building truth, meaning at least one AlphaEarth cell centre inside. Small houses fail this most: ${fmt(BT.drop_why["no soft truth"].res)} of the ${fmt(BT.drop_why["no soft truth"].res + BT.drop_why["no soft truth"].nres)} dropped are residential.`,
+        `That leaves ${fmt(BT.train.res + BT.train.nres)} buildings, ${resC(BT.train)} residential by count and ${resA(BT.train)} by area. Training adds no class weights. Leave-one-box-out keeps each box's buildings out of the model that scores them.`],
+      test: [`The frozen test set also needs an AlphaEarth, GHSL and PLS value for every building. PLS is mostly missing on houses: ${fmt(BT.drop_why["no PLS value"].res)} of ${fmt(BT.drop_why["no PLS value"].res + BT.drop_why["no PLS value"].nres)} dropped are residential.`,
+        `So the 50 / 50 pool becomes a test set that is ${resC(BT.test)} residential by count and ${resA(BT.test)} by area. The filters run after balancing, which undoes it. The next three steps show the other order, one operation at a time.`],
+      fix: [`Swap the order and change the unit. First drop buildings with no soft truth, AlphaEarth or GHSL value (PLS is one baseline, so it is no longer a requirement). Then, in each box, cut the class with more footprint area at random (seed ${BAL.seed}) until both classes cover the same area. Most houses now stay: ${fmt(FIXT.res)} of ${fmt(PASS.res)}.`,
+        `Rerun: one model for every set (Ridge on each building's mean AlphaEarth embedding, leave-one-box-out), scored against soft truth beside GHSL on the same buildings. GHSL has the lower error in every set and every metric; the balancing changes how large the gap looks. On the area-balanced set the pooled gap is nearly zero (${(WA.B.ae.pooled - WA.B.ghsl.pooled).toFixed(3)}) only because ${resC(FIXT)} of buildings are houses. Per class or per m² it is the widest.`,
+        `Training on ${resC(FIXT)} houses with no weights pushes the model's non-residential error to ${WA.B.ae.nres.toFixed(2)}. With equal class weights (Bw) the class-balanced gap is ${(WA.Bw.ae.class_bal - WA.Bw.ghsl.class_bal).toFixed(3)}, close to filter-then-count (C, ${(WA.C.ae.class_bal - WA.C.ghsl.class_bal).toFixed(3)}); per m² GHSL still leads by ${(WA.Bw.ae.area_w - WA.Bw.ghsl.area_w).toFixed(3)}. Compare the arms with each other: this is the simple Ridge, not the ViT behind the deck numbers.`],
+    })[balSel],
+    s: () => { const t = balSel === "fix" ? FIXT : BT[balSel], w = winAt(BAL_ORD[balSel]);
+      return [[`${fmt(t.res)} · ${fmt(t.nres)}`, "buildings, all boxes: res · non-res"], [resC(t), "residential share by count"], [resA(t), "residential share by area"],
+        [`${w.res} · ${w.nres}`, "in this window: res · non-res"]] },
+    extra: () => {
+      const rows = BAL_STAGES.map(([k, l]) => [l, fmt(BT[k].res), fmt(BT[k].nres), resC(BT[k]), resA(BT[k])]).concat([["Fix: filter, then area 1:1", fmt(FIXT.res), fmt(FIXT.nres), resC(FIXT), resA(FIXT)]]);
+      if (balSel === "fix") return orderDiagram() + `<p style="margin:12px 0 0;font-weight:600">Does it change AlphaEarth vs GHSL?</p>` +
+        seg("w16m", [["pooled", "Pooled"], ["class_bal", "Class-balanced"], ["area_w", "Per m²"]], w16m) + armsFig() +
+        tbl(["Set", "Buildings", "AE", "GHSL", "AE − GHSL"], ARMS.map(([k, l]) => [l, fmt(WA[k].n), WA[k].ae[w16m].toFixed(3), WA[k].ghsl[w16m].toFixed(3), (WA[k].ae[w16m] - WA[k].ghsl[w16m] >= 0 ? "+" : "") + (WA[k].ae[w16m] - WA[k].ghsl[w16m]).toFixed(3)]), r => r[0].startsWith("Bw")) +
+        `<p class="note">Area balancing evens the m², not the buildings: ${resC(FIXT)} of buildings are houses, so a pooled score is mostly a house score. Report the class-balanced and per-m² numbers next to it. The tile-level version of 1:1 is in step ${ORD("own") + 1}.</p>`;
+      let h = `<p style="margin:10px 0 0;font-weight:600">The four sets, all ten boxes</p>` +
+        tbl(["Set", "Res", "Non-res", "Res share (count)", "Res share (area)"], rows, (r, j) => j < BAL_STAGES.length && BAL_STAGES[j][0] === balSel);
+      if (balSel === "train" || balSel === "test") {
+        const keys = balSel === "train" ? ["no soft truth"] : ["no soft truth", "no AlphaEarth value", "no PLS value", "no GHSL value"];
+        h += `<p style="margin:10px 0 0;font-weight:600">Why balanced buildings drop out${balSel === "train" ? " of training" : " of the test set"}</p>` +
+          tbl(["Missing", "Res", "Non-res"], keys.map(k => [k, fmt(BT.drop_why[k].res), fmt(BT.drop_why[k].nres)]));
+      }
+      h += `<p style="margin:10px 0 0;font-weight:600">By box</p>` + tbl(["Box", "Kept per class", "Test res · non-res", "Test res share"],
+        BAL.regions.map(r => [short(r.name), fmt(r.pool.res), `${fmt(r.test.res)} · ${fmt(r.test.nres)}`, resC(r.test)]), r => r[0] === "NYC");
+      return h + `<p class="note">Every test building is also in the training table. That is safe only because each box is scored by a model trained on the other nine.</p>` },
+    src: () => balSel === "fix" ? `scripts/run_week16_balance_area_loro.py · ${W16.run}/summary.json · ${W16.model}` : `${BAL.src.code} · ${BAL.src[balSel]}`,
+    leg: () => balSel === "fix" ? [["var(--res)", "Residential, kept"], ["var(--nres)", "Non-residential, kept"], ["var(--excl)", "Cut by area balancing", "#ffffff"], ["color-mix(in srgb, var(--excl) 80%, transparent)", "Fails the filter"]] :
+      [["var(--res)", "Residential, still in"], ["var(--nres)", "Non-residential, still in"], ["var(--excl)", balSel === "labelled" ? "Untagged, never labelled" : "Dropped at this or an earlier step", "#ffffff"]] },
+  { id: "fix1", t: "Fix 1: filter first", h: "Fix, step 1: drop what cannot be scored, before balancing",
+    p: () => [`Before any balancing, drop every labelled building the comparison cannot score: no AlphaEarth cell centre inside (so no soft truth and no embedding), or no GHSL value. PLS is no longer required. It is one baseline, and requiring it removed ${fmt(BT.drop_why["no PLS value"].res)} houses from today's test set.`,
+      `This drops ${fmt(DROP.res + DROP.nres)} buildings, ${pct(DROP.res / (DROP.res + DROP.nres))} of them houses, mostly small ones. Because it runs first, nothing removed here can unbalance the set later. In this window ${winFail().res + winFail().nres} footprints fail, ${winFail().res} of them houses (grey on the map).`],
+    s: () => [[`${fmt(BT.labelled.res + BT.labelled.nres)} → ${fmt(PASS.res + PASS.nres)}`, "labelled → passes the filter"], [`${fmt(DROP.res)} · ${fmt(DROP.nres)}`, "dropped: res · non-res"],
+      [resC(PASS), "residential share by count, after"], [resA(PASS), "residential share by area, after"]],
+    extra: () => orderDiagram("filter") + `<p style="margin:12px 0 0;font-weight:600">By box</p>` +
+      tbl(["Box", "Labelled res · non-res", "Pass res · non-res", "Dropped that are houses"], FR.map(r => { const dr = r.labelled.res - r.passed.res, dn = r.labelled.nres - r.passed.nres;
+        return [short(r.name), `${fmt(r.labelled.res)} · ${fmt(r.labelled.nres)}`, `${fmt(r.passed.res)} · ${fmt(r.passed.nres)}`, pct(dr / (dr + dn))] }), r => r[0] === "NYC"),
+    src: () => `scripts/run_week16_balance_area_loro.py (filter: soft truth ∩ AlphaEarth embedding ∩ GHSL) · ${W16.run}`,
+    leg: [["var(--res)", "Residential, passes"], ["var(--nres)", "Non-residential, passes"], ["color-mix(in srgb, var(--excl) 80%, transparent)", "Fails: no cell centre inside"]] },
+  { id: "fix2", t: "Fix 2: balance by area", h: "Fix, step 2: cut the larger-area class until areas match", ctl: "fixreg",
+    p: () => { const r = FRx[fixReg], cr = isRes(r);
+      return [`In each box, compare the footprint area of the two classes that passed step 1. Keep all of the class with less area. Shuffle the other class (seed ${BAL.seed}) and keep its buildings in that order until their area first reaches the smaller class's area.`,
+        `${short(r.name)}: residential covers ${km2(r.passed.a_res)} and non-residential ${km2(r.passed.a_nres)}, so ${cr ? "houses are" : "non-residential buildings are"} cut: ${fmt(cr ? r.area1.res : r.area1.nres)} of ${fmt(cr ? r.passed.res : r.passed.nres)} kept.${r.name === "NYC_NE" ? ` In this window that cuts ${winCut()} houses (hatched).` : ""}`,
+        `Which class is cut depends on the box: houses in ${FR.filter(isRes).length} boxes, non-residential in ${FR.filter(r => !isRes(r)).map(r => short(r.name)).join(", ")}, where large non-residential buildings cover more ground than the houses. Across all boxes the result is ${resA(FIXT)} residential by area but ${resC(FIXT)} by count.`] },
+    s: () => [[fmt(FIXT.res + FIXT.nres), "buildings kept, all boxes"], [`${fmt(FIXT.res)} · ${fmt(FIXT.nres)}`, "res · non-res"], [resA(FIXT), "residential share by area"], [resC(FIXT), "residential share by count"]],
+    extra: () => areaBalFig(FRx[fixReg]) + orderDiagram("balance") + `<p style="margin:12px 0 0;font-weight:600">By box</p>` +
+      tbl(["Box", "Larger area, cut", "Res kept", "Non-res kept", "Res share (count)"], FR.map(r => [short(r.name), isRes(r) ? "residential" : "non-res",
+        `${fmt(r.area1.res)} / ${fmt(r.passed.res)}`, `${fmt(r.area1.nres)} / ${fmt(r.passed.nres)}`, resC(r.area1)]), r => r[0] === short(fixReg)),
+    src: () => `scripts/run_week16_balance_area_loro.py (bal_area, seed ${BAL.seed}) · areas from datasets/building_bbox_grid/buildings.parquet (area_m2_approx)`,
+    leg: [["var(--res)", "Residential, kept"], ["var(--nres)", "Non-residential, kept"], ["var(--excl)", "Cut by area balancing", "#ffffff"], ["color-mix(in srgb, var(--excl) 80%, transparent)", "Failed step 1"]] },
+  { id: "fix3", t: "Fix 3: rerun the comparison", h: "Fix, step 3: does it change AlphaEarth vs GHSL?",
+    p: () => [`Rerun with one model for every set (Ridge on each building's mean AlphaEarth embedding, leave-one-box-out), scored against soft truth beside GHSL on the same buildings. Set A is today's frozen test set; C is filter first then 1:1 by count; B is steps 1–2; Bw is B trained with equal weight per class.`,
+      `GHSL has the lower error in ${GHSL_WINS} of ${ARMS.length * 3} set-and-metric pairs. The balancing changes how large the gap looks. On B the pooled gap is nearly zero (${(WA.B.ae.pooled - WA.B.ghsl.pooled).toFixed(3)}) only because ${resC(FIXT)} of buildings are houses; per class or per m² it is the widest.`,
+      `Training on ${resC(FIXT)} houses with no weights pushes the model's non-residential error to ${WA.B.ae.nres.toFixed(2)}. With equal class weights (Bw) the class-balanced gap is ${(WA.Bw.ae.class_bal - WA.Bw.ghsl.class_bal).toFixed(3)}, close to C (${(WA.C.ae.class_bal - WA.C.ghsl.class_bal).toFixed(3)}); per m² GHSL still leads by ${(WA.Bw.ae.area_w - WA.Bw.ghsl.area_w).toFixed(3)}. Compare the sets with each other: this is the simple Ridge, not the ViT behind the deck numbers.`],
+    s: () => [[`${GHSL_WINS} / ${ARMS.length * 3}`, "set × metric pairs where GHSL is lower"], [fmt(WA.B.n), "buildings scored in B and Bw"],
+      [(WA.Bw.ae.class_bal - WA.Bw.ghsl.class_bal).toFixed(3), "class-balanced gap, Bw"], [(WA.Bw.ae.area_w - WA.Bw.ghsl.area_w).toFixed(3), "per m² gap, Bw"]],
+    extra: () => seg("w16m", [["pooled", "Pooled"], ["class_bal", "Class-balanced"], ["area_w", "Per m²"]], w16m) + armsFig() +
+      tbl(["Set", "Buildings", "AE", "GHSL", "AE − GHSL"], ARMS.map(([k, l]) => [l, fmt(WA[k].n), WA[k].ae[w16m].toFixed(3), WA[k].ghsl[w16m].toFixed(3), (WA[k].ae[w16m] - WA[k].ghsl[w16m] >= 0 ? "+" : "") + (WA[k].ae[w16m] - WA[k].ghsl[w16m]).toFixed(3)]), r => r[0].startsWith("Bw")) +
+      `<p class="note">Area balancing evens the m², not the buildings, so a pooled score on B is mostly a house score. Report the class-balanced and per-m² numbers next to it. The tile-level version of 1:1 is in step ${ORD("own") + 1}.</p>`,
+    src: () => `scripts/run_week16_balance_area_loro.py · ${W16.run}/summary.json · ${W16.model}`,
+    leg: [["var(--res)", "Residential, in set B"], ["var(--nres)", "Non-residential, in set B"], ["var(--excl)", "Cut by area balancing", "#ffffff"], ["color-mix(in srgb, var(--excl) 80%, transparent)", "Failed step 1"]] },
+  { id: "cluster", t: "One building, many cells", h: "Big buildings give many near-copies",
+    p: () => { const r = keptCls("res"), n = keptCls("nres"), ny = CL.by_region.NYC_NE.non_residential;
+      return [`Each kept cell is one training example, but neighbouring cells of the same building share almost the same embedding and the same label. Labels on the map show how many training cells the biggest contributors in this window give; ${r.zero} residential footprints here give none.`,
+        `Across NYC, ${fmt(ny.cells)} non-residential training cells come from ${fmt(ny.buildings)} buildings and carry the information of about ${fmt(ny.kish)} independent ones; one building alone gives ${fmt(CL.nyc_top.cells)} cells. Cell-level scores look better than they should, and the model learns big boxes more than typical buildings.`,
+        `Leave-one-metro-out testing does not fix this. It catches city-specific overfitting, but within each training box the same few large buildings still dominate. Capping cells per building, or weighting each cell by 1 ÷ (cells from its building), addresses it directly.`] },
+    s: () => [[fmt(CL.non_residential.cells), "non-res training cells, all boxes"], [`≈ ${fmt(CL.non_residential.kish)}`, `effective independent non-res buildings (of ${fmt(CL.non_residential.buildings)})`],
+      [`≈ ${fmt(CL.residential.kish)}`, `effective residential buildings (of ${fmt(CL.residential.buildings)})`], [`${fmt(CL.non_residential.max)}`, "most cells from one footprint"]],
+    extra: () => lorenz() + `<p class="src" style="margin:6px 0 0">Curves: share of kept training cells that come from the largest x% of buildings, all ten boxes. Effective count = (Σ cells)² ÷ Σ cells² per building.</p>` +
+      tbl(["Cap per building", "Non-res cells", "Eff. non-res", "Res cells", "Eff. res"], ["1", "5", "10", "25"].map(k => [k, fmt(CL.non_residential.caps[k].cells), fmt(CL.non_residential.caps[k].kish), fmt(CL.residential.caps[k].cells), fmt(CL.residential.caps[k].kish)])
+        .concat([["none (current)", fmt(CL.non_residential.cells), fmt(CL.non_residential.kish), fmt(CL.residential.cells), fmt(CL.residential.kish)]]), r => r[0] === "none (current)"),
+    src: "datasets/week4_pixel_gt_balanced/pixels.parquet (building_ids per training cell; a cell touching k footprints counts 1/k to each)",
+    leg: [["var(--res)", "Residential: more training cells = stronger"], ["var(--nres)", "Non-residential: more training cells = stronger"]] },
+  { id: "ae", t: "Map to AlphaEarth", h: "Each label sits on an AlphaEarth cell",
+    p: [`Because the labels were built on AlphaEarth's own grid, every labelled cell already has its 64 numbers: one training example = (64 numbers, residential share, non-residential share).`,
+        `Colours show the three strongest patterns in those numbers. Outlines show the label. Hover a cell to see its 64 values and the held-out model's call.`],
+    s: [[fmt(M.n_ae), "cells with an embedding"], [`${fmt(aeAgree)} / ${fmt(aeCalls.length)}`, "pure cells the held-out model gets right"]],
+    src: "building_cells.parquet (A00–A63) · week-4 logistic regression, NYC held out",
+    leg: [["linear-gradient(90deg,#c44,#4a4,#44c)", "Embedding colour"], ["transparent", "Residential label", "var(--res)"], ["transparent", "Non-residential label", "var(--nres)"], ["transparent", "Mixed", "var(--mixed)"]] },
+  { id: "ghsl", t: "GHSL on its own grid", h: "GHSL's grid does not line up", ctl: "centres",
+    p: [`GHSL's 10 m cells live in the Mollweide projection, so they are skewed and shifted against AlphaEarth's grid. Each GHSL cell gives a built-up share plus a residential / non-residential flag (2018).`,
+        `Since week 6, neither grid is moved: GHSL is averaged under each building footprint on its own grid. Week 4 instead read GHSL at each AlphaEarth cell centre, which forced it onto AlphaEarth's grid; switch that on to see the jump.`],
+    s: [[`${M.ghsl_offset_median.toFixed(1)} m`, "median AE-to-GHSL centre offset"], [`${fmt(gAgree)} / ${fmt(pure.length)}`, "pure cells where GHSL's larger share matches"],
+        [fmt(gNone), "pure cells GHSL calls unbuilt"], [`${M.ghsl_building_check.n}`, "buildings checked against the stored per-building values"]],
+    src: `${M.ghsl_tile} · scripts/eval_week6_overture_polygon_mae.py (max difference ${M.ghsl_building_check.max_diff})`,
+    leg: [["transparent", "GHSL 10 m cell (Mollweide)", "var(--ghsl)"], ["var(--res)", "GHSL residential built-up"], ["var(--nres)", "GHSL non-residential built-up"]] },
+  { id: "own", t: "Count right on each grid", h: "How many tiles each product gets right", ctl: "own",
+    p: () => ownMetric === "bal" ? [`Balance happens on each grid separately: count the tiles of each true class on that grid, keep the size of the smallest class from every class at random, then count right. This is the tile-level version of 1:1, in the unit that gets scored.`] : [`Each product is judged only on its own tiles: AlphaEarth on its UTM cells, GHSL on its Mollweide cells. The truth for every tile comes from the same footprints. The two sets of tiles do not line up one-to-one, so there is no tile-by-tile contest: we count how many tiles each product gets right and compare the counts.`,
+        `A tile's class is empty when building covers less than ${Math.round(M.share_max * 100)}% of it, otherwise whichever building share is larger. The same rule turns the truth and each prediction into a class. AlphaEarth here is the week 7 AlphaEarth-only model, trained with NYC held out.`,
+        `The two grids hold different numbers of tiles in each class, so compare the rate for each class as well as the overall count.`],
+    s: () => ownMetric === "bal" ? [[`${BA.r} / ${BA.n}`, "AlphaEarth tiles right, balanced"], [`${BG.r} / ${BG.n}`, "GHSL tiles right, balanced"],
+        [`${pct(BA.r / BA.n)} vs ${pct(BG.r / BG.n)}`, "share right: AlphaEarth vs GHSL"], [`${BA.m} · ${BG.m}`, "tiles kept per class (smallest class on each grid)"]] :
+      [[`${fmt(TA.right)} / ${fmt(TA.n)}`, "AlphaEarth tiles right"], [`${fmt(TG.right)} / ${fmt(TG.n)}`, "GHSL tiles right"],
+        [`${pct(TA.right / TA.n)} vs ${pct(TG.right / TG.n)}`, "share right: AlphaEarth vs GHSL"], [`${pct(TA.bal)} vs ${pct(TG.bal)}`, "mean of the per-class rates"]],
+    extra: () => (ownMetric === "bal" ? tileBalDiagram() + tbl(["True class", "AlphaEarth: kept of all · right", "GHSL: kept of all · right"],
+          [["res", "Residential"], ["nres", "Non-residential"], ["empty", "Empty"]].map(([k, l]) => [l, `${BA.m} of ${TA[k][1]} · ${BA.right[k]}`, `${BG.m} of ${TG[k][1]} · ${BG.right[k]}`])
+          .concat([["All kept", `${BA.n} · ${BA.r}`, `${BG.n} · ${BG.r}`]]), r => r[0] === "All kept") +
+        `<p class="note">Without balancing, residential is ${pct(TA.res[1] / TA.n)} of AlphaEarth's tiles and ${pct(TG.res[1] / TG.n)} of GHSL's, so the raw count mostly measures residential. After 1:1:1 each class counts equally. One draw moves by a few tiles, so the expected rate (the mean of the per-class rates) is shown too.</p>` :
+      ownMetric === "right" ? tbl(["True class of tile", "AlphaEarth right", "GHSL right"], [["res", "Residential"], ["nres", "Non-residential"], ["empty", "Empty (< " + Math.round(M.share_max * 100) + "% building)"]]
+          .map(([k, l]) => [l, `${TA[k][0]} / ${TA[k][1]} (${TA[k][1] ? pct(TA[k][0] / TA[k][1]) : "–"})`, `${TG[k][0]} / ${TG[k][1]} (${TG[k][1] ? pct(TG[k][0] / TG[k][1]) : "–"})`])
+          .concat([["All tiles", `${TA.right} / ${TA.n} (${pct(TA.right / TA.n)})`, `${TG.right} / ${TG.n} (${pct(TG.right / TG.n)})`]]), r => r[0] === "All tiles") :
+        tbl(["This window", "AlphaEarth", "GHSL"], [["Tiles scored", fmt(OG.ae.n), fmt(OG.ghsl.n)], ["Residential share error", OG.ae.mae_res.toFixed(3), OG.ghsl.mae_res.toFixed(3)],
+         ["Non-residential share error", OG.ae.mae_nres.toFixed(3), OG.ghsl.mae_nres.toFixed(3)], ["Empty share error", OG.ae.mae_empty.toFixed(3), OG.ghsl.mae_empty.toFixed(3)],
+         ["3-class macro-F1", OG.ae.f1_3.toFixed(2), OG.ghsl.f1_3.toFixed(2)]])) +
+      `<p class="src" style="margin-top:6px">One 300 m window of NYC, AlphaEarth's weakest metro, and only tiles touching a tagged footprint. A conclusion needs these counts across whole boxes.</p>`,
+    src: "Truth recomputed on each grid from the Overture snapshot · outputs/week7_xgb_score_full_gt_all_cells (AlphaEarth) · GHS-BUILT-S + NRES (GHSL) · week-3 class rule",
+    leg: () => ownMetric === "bal" ? [[gridSel === "ae" ? "var(--accent)" : "var(--ghsl)", "Kept, right"], ["transparent", "Kept, wrong", "#ffffff"], ["rgba(255,255,255,.08)", "Not drawn in the 1:1 sample"]] : ownMetric === "right" ? [[gridSel === "ae" ? "var(--accent)" : "var(--ghsl)", `Right (${gridSel === "ae" ? "AlphaEarth" : "GHSL"} tile)`], ["transparent", "Wrong", "#ffffff"]] :
+      [["color-mix(in srgb, var(--accent) 20%, transparent)", "Low share error"], ["var(--accent)", "High share error (AlphaEarth tiles)"], ["var(--ghsl)", "High share error (GHSL tiles)"]] },
+  { id: "spec", t: "The ground truth, stated", h: "What the GT is, in one table",
+    p: [`What every slide should say about the ground truth, with the known issues next to each choice.`],
+    s: [],
+    extra: () => tbl(["", "Choice", "Known issue"], [
+      ["Source", `Overture ${A.release} footprints; use tags from OpenStreetMap; ${A.n_labels} tags mapped to residential / non-residential`, "Untagged buildings are dropped and their area counts as empty"],
+      ["Places", "10 US lon/lat boxes, 6–24 km a side; not city or metro boundaries", "NYC box includes Hoboken and Jersey City; choice of boxes not documented"],
+      ["Years", "Labels 2026, AlphaEarth 2024, GHSL 2018, Sentinel-2 2018", "Buildings built or changed in between are mislabelled"],
+      ["Grid", "AlphaEarth 10 m UTM cells", "GHSL scored on its own Mollweide grid since week 6"],
+      ["Cell truth (A)", "res / non-res / empty share per cell; pure = one class touches", `Pure cells are ${pct(CA.mean_empty.res)} (res) and ${pct(CA.mean_empty.nres)} (non-res) empty on average`],
+      ["Building truth (B)", "soft: mean share of cells centred inside; hard: tag", "Footprints with no cell centre drop out (mostly houses)"],
+      ["Target", "A: classification (weeks 3–5) · B: regression of shares, MAE (weeks 6–15)", "Empty is a third class in weeks 3 and 11 only"],
+      ["Balancing", "A: 1:1 by cell count per box, seed 42 · B: 1:1 by building count per box, seed 42, before coverage filters", `Filters then drop mostly houses: test is ${resC(BT.test)} residential by count, ${resA(BT.test)} by area. Rerun with filters first and area 1:1: GHSL still lower; report class-balanced and per-m² error, not only pooled`],
+      ["Independence", "Each cell counted as one example", `Non-res cells ≈ ${fmt(CL.non_residential.kish)} independent buildings; cap or weight per building`],
+      ["Evaluation", "Each product scored on its own tiles; compare the count and rate of tiles right, per class. Leave one box out (10 folds)", "Does not fix clustering inside training boxes"]]),
+    src: "Numbers from presentation/canvas/build_gt_audit_data.py (all ten boxes) and build_gt_canvas_data.py (this window)",
+    leg: [["var(--res)", "Residential"], ["var(--nres)", "Non-residential"], ["var(--excl)", "Left out"]] },
+];
+const SID = () => STEPS[step].id;
+const ORD = id => STEPS.findIndex(s => s.id === id);
+const after = id => step >= ORD(id);
+const LEG3_THREE = [["var(--res)", "Residential"], ["var(--nres)", "Non-residential"], ["var(--empty)", `Empty (< ${Math.round(M.share_max * 100)}% building)`]];
+const LEG4_FULL = [["var(--res)", "Fully covered residential"], ["var(--nres)", "Fully covered non-residential"], ["color-mix(in srgb, var(--res) 25%, transparent)", "Partly covered, excluded"], ["var(--mixed)", "Mixed, set aside"]];
+
+// ---------- canvas
+const cv = document.getElementById("map"), ctx = cv.getContext("2d"), cw = document.getElementById("cw"), tip = document.getElementById("tip");
+const img = { esri: new Image(), s2: new Image() }; img.esri.src = D.img.esri; img.s2.src = D.img.s2;
+let step = 0, bg = "esri", view = { k: 1, x: 0, y: 0 };
+let dpr = 1, size = 600;
+function fit() {
+  dpr = window.devicePixelRatio || 1; size = cw.clientWidth;
+  cv.width = Math.round(size * dpr); cv.height = Math.round(cw.clientHeight * dpr); hatch = null; draw();
+}
+const base = () => size / M.width_m;            // px per Mercator metre at zoom 1
+function tx(p) { return [(p[0] * base() * view.k + view.x) * dpr, (p[1] * base() * view.k + view.y) * dpr] }
+function path(ring) { ctx.beginPath(); ring.forEach((p, i) => { const [x, y] = tx(p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y) }); ctx.closePath() }
+function hex2(hex) { const h = hex.replace("#", ""); const n = parseInt(h.length === 3 ? h.split("").map(c => c + c).join("") : h, 16); return [n >> 16 & 255, n >> 8 & 255, n & 255] }
+function rgba(hex, a) { const [r, g, b] = hex2(hex); return `rgba(${r},${g},${b},${a})` }
+let hatch = null;
+function hatchPattern(col) { const c = document.createElement("canvas"); c.width = c.height = 8 * dpr; const g = c.getContext("2d");
+  g.strokeStyle = col; g.lineWidth = 1.2 * dpr; g.beginPath(); g.moveTo(0, 8 * dpr); g.lineTo(8 * dpr, 0); g.stroke(); return ctx.createPattern(c, "repeat") }
+const CELL_STEPS = ["grid", "cover", "comp", "sample", "cluster", "ae", "ghsl"];
+
+function draw() {
+  const C = { res: css("--res"), nres: css("--nres"), excl: css("--excl"), mixed: css("--mixed"), ghsl: css("--ghsl"), ink: css("--ink"), empty: css("--empty") };
+  const id = SID();
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = "#0b0f13"; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (bg !== "none" && img[bg].complete) {
+    const [x0, y0] = tx([0, 0]), [x1, y1] = tx([M.width_m, M.height_m]);
+    ctx.imageSmoothingEnabled = bg === "esri"; ctx.drawImage(img[bg], x0, y0, x1 - x0, y1 - y0);
+  }
+  const dim = +document.getElementById("dim").value / 100;
+  ctx.fillStyle = `rgba(11,15,19,${dim})`; ctx.fillRect(0, 0, cv.width, cv.height);
+  hatch = hatch || hatchPattern("rgba(255,255,255,.55)");
+  const lw = Math.max(0.6, Math.min(2, view.k)) * dpr;
+  const [rR, rG, rB] = hex2(C.res), [nR, nG, nB] = hex2(C.nres), [eR, eG, eB] = hex2(C.empty);
+
+  // cells
+  if (CELL_STEPS.includes(id) || (id === "twogt" && gtSel === "cell")) CELLS.forEach(c => {
+    path(c.ring);
+    if (id === "cover" && view3 === "three") {
+      const k = decode3(c); ctx.fillStyle = rgba(k === "res" ? C.res : k === "nres" ? C.nres : C.empty, k === "empty" ? 0.5 : 0.8); ctx.fill();
+    } else if (id === "sample" && pureRule === "three") {
+      const k = decode3(c); ctx.fillStyle = rgba(k === "res" ? C.res : k === "nres" ? C.nres : C.empty, k === "empty" ? 0.5 : 0.85); ctx.fill();
+    } else if (id === "cover") {
+      if (c.fr > 0) { ctx.fillStyle = rgba(C.res, 0.15 + 0.75 * c.fr); ctx.fill() }
+      if (c.fn > 0) { ctx.fillStyle = rgba(C.nres, 0.15 + 0.75 * c.fn); ctx.fill() }
+    } else if (id === "comp") {             // colour = mix of the three shares
+      const fr = Math.min(1, c.fr), fn = Math.min(1, c.fn), fe = Math.max(0, 1 - fr - fn);
+      ctx.fillStyle = `rgba(${Math.round(fr * rR + fn * nR + fe * eR)},${Math.round(fr * rG + fn * nG + fe * eG)},${Math.round(fr * rB + fn * nB + fe * eB)},${c.stratum === "empty" ? 0.3 : 0.85})`; ctx.fill();
+    } else if (id === "twogt") {
+      if (c.stratum === "res" || c.stratum === "nres") { ctx.fillStyle = rgba(c.stratum === "res" ? C.res : C.nres, 0.8); ctx.fill() }
+      else if (c.stratum === "mixed") { ctx.fillStyle = rgba(C.mixed, 0.8); ctx.fill() }
+    } else if (id === "sample") {
+      if (c.stratum === "res" || c.stratum === "nres") {
+        const on = pureRule === "any" ? c.kept : isFull(c);
+        ctx.fillStyle = rgba(c.stratum === "res" ? C.res : C.nres, on ? 0.85 : 0.18); ctx.fill();
+      } else if (c.stratum === "mixed") { ctx.fillStyle = rgba(C.mixed, 0.75); ctx.fill() }
+    } else if (id === "cluster") {
+      if (c.kept) { ctx.fillStyle = "rgba(255,255,255,.10)"; ctx.fill() }
+    } else if (id === "ae" && c.rgb) {
+      ctx.fillStyle = `rgb(${c.rgb[0]},${c.rgb[1]},${c.rgb[2]})`; ctx.fill();
+    } else if (id === "ghsl" && c.g_fr != null && (c.g_fr + c.g_fn) > 0) {
+      ctx.fillStyle = "rgba(255,255,255,.06)"; ctx.fill();
+    }
+    if (id === "ae" && c.stratum !== "empty") {
+      ctx.strokeStyle = c.stratum === "res" ? C.res : c.stratum === "nres" ? C.nres : C.mixed; ctx.lineWidth = 1.6 * lw; path(c.ring); ctx.stroke();
+    } else {
+      ctx.strokeStyle = id === "ghsl" ? "rgba(255,255,255,.35)" : "rgba(255,255,255,.28)"; ctx.lineWidth = 0.6 * dpr; ctx.stroke();
+    }
+  });
+
+  // own-grid scoring
+  if (id === "own") {
+    const hue = gridSel === "ae" ? css("--accent") : C.ghsl;
+    const T_ = gridSel === "ae" ? AE_T : GH_T;
+    T_.forEach(t => { path(t.ring);
+      if (ownMetric === "bal" && !t.inBal) { ctx.fillStyle = "rgba(255,255,255,.06)"; ctx.fill(); ctx.strokeStyle = "rgba(255,255,255,.15)"; ctx.lineWidth = 0.5 * dpr; ctx.stroke(); return }
+      if (ownMetric === "right" || ownMetric === "bal") { if (t.ok3) { ctx.fillStyle = rgba(hue, 0.7); ctx.fill() } else { ctx.fillStyle = hatch; ctx.fill() } }
+      else { const e = gridSel === "ae" ? tileErr(t.ae_pr, t.ae_pn, t.fr, t.fn) : tileErr(t.fr, t.fn, t.gt_r, t.gt_n); ctx.fillStyle = rgba(hue, 0.1 + 0.85 * e); ctx.fill() }
+      ctx.strokeStyle = ownMetric !== "err" && !t.ok3 ? "rgba(255,255,255,.85)" : "rgba(255,255,255,.35)"; ctx.lineWidth = (ownMetric !== "err" && !t.ok3 ? 1.1 : 0.6) * dpr; ctx.stroke() });
+  }
+
+  // GHSL cells
+  if (id === "ghsl") {
+    G.forEach(g => {
+      path(g.ring);
+      if (g.ok && (g.fr + g.fn) > 0) { ctx.fillStyle = rgba(g.fn > 0 ? C.nres : C.res, 0.15 + 0.7 * (g.fr + g.fn)); ctx.fill() }
+      ctx.strokeStyle = rgba(C.ghsl, 0.9); ctx.lineWidth = 0.8 * dpr; ctx.stroke();
+    });
+    if (showCentres) CELLS.forEach(c => { if (!c.g_ctr || c.stratum === "empty") return;
+      const a = tx([...cellCentre(c)]), b = tx(c.g_ctr); ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 1 * dpr;
+      ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke(); ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(...a, 1.8 * dpr, 0, 7); ctx.fill() });
+  }
+
+  // buildings
+  const bldMode = id === "twogt" && gtSel === "bld";
+  B.forEach(b => {
+    b.rings.forEach(r => {
+      path(r);
+      if (id === "label" || id === "spec") {
+        if (b.status === "excluded") { ctx.fillStyle = hatch; ctx.fill(); ctx.fillStyle = rgba(C.excl, 0.35); ctx.fill() }
+        else { ctx.fillStyle = rgba(b.status === "res" ? C.res : C.nres, 0.6); ctx.fill() }
+      }
+      if (bldMode && b.status !== "excluded") {
+        if (b.soft && !b.noCentre) { const s = b.soft.r + b.soft.n || 1, fr = b.soft.r / s, fn = b.soft.n / s;
+          ctx.fillStyle = `rgba(${Math.round(fr * rR + fn * nR)},${Math.round(fr * rG + fn * nG)},${Math.round(fr * rB + fn * nB)},${0.35 + 0.55 * Math.min(1, b.soft.r + b.soft.n)})`; ctx.fill() }
+        else if (b.noCentre) { ctx.fillStyle = hatch; ctx.fill(); ctx.fillStyle = rgba(C.excl, 0.5); ctx.fill() }
+      }
+      if ((id === "fix1" || id === "fix2" || id === "fix3") && b.status !== "excluded") { const f = inFix(b);
+        if (f === 1 || (id === "fix1" && f === 0)) { ctx.fillStyle = rgba(b.status === "res" ? C.res : C.nres, 0.7); ctx.fill() }
+        else if (f === 0) { ctx.fillStyle = hatch; ctx.fill(); ctx.fillStyle = rgba(C.excl, 0.35); ctx.fill() }
+        else if (f === -1) { ctx.fillStyle = rgba(C.excl, 0.75); ctx.fill() } }
+      else if (id === "bal" && b.status !== "excluded") { const k = balReach(b);
+        if (k >= BAL_ORD[balSel]) { ctx.fillStyle = rgba(b.status === "res" ? C.res : C.nres, 0.7); ctx.fill() }
+        else if (k) { ctx.fillStyle = hatch; ctx.fill(); ctx.fillStyle = rgba(C.excl, 0.35); ctx.fill() } }
+      if (id === "cluster" && b.status !== "excluded" && b.kept > 0) {
+        ctx.fillStyle = rgba(b.status === "res" ? C.res : C.nres, 0.15 + 0.8 * Math.sqrt(b.kept / keptMax)); ctx.fill() }
+      if (id === "score") {
+        if (b.test && b.test.vr != null && b.test.gr != null) { const e = errB(b, truth);
+          ctx.fillStyle = rgba(e.v < e.g ? css("--accent") : C.ghsl, 0.72); ctx.fill() }
+        else { ctx.fillStyle = "rgba(255,255,255,.08)"; ctx.fill() }
+      }
+      const outline = (id === "src" || id === "snap") ? "#ffffff" : b.status === "excluded" ? "rgba(255,255,255,.7)" : b.status === "res" ? C.res : C.nres;
+      ctx.strokeStyle = after("cover") && id !== "spec" ? "rgba(255,255,255,.75)" : outline;
+      ctx.lineWidth = (after("cover") && id !== "spec" ? 0.9 : 1.4) * dpr; ctx.stroke();
+    });
+  });
+  if (id === "cluster") {                       // label the biggest contributors with their cell counts
+    ctx.font = `600 ${11 * dpr}px ${css("--mono")}`; ctx.textAlign = "center";
+    keptTop.slice(0, 6).filter(b => b.kept >= 2).forEach(b => { const r = b.rings[0]; let x = 0, y = 0; r.forEach(p => { x += p[0]; y += p[1] });
+      const [px, py] = tx([x / r.length, y / r.length]); const t = fmt(b.kept, b.kept % 1 ? 1 : 0);
+      ctx.fillStyle = "rgba(11,15,19,.75)"; const w = ctx.measureText(t).width; ctx.fillRect(px - w / 2 - 4 * dpr, py - 9 * dpr, w + 8 * dpr, 16 * dpr);
+      ctx.fillStyle = "#fff"; ctx.fillText(t, px, py + 3 * dpr) });
+    ctx.textAlign = "left";
+  }
+  if (hover) highlight();
+  scaleBar();
+}
+function scaleBar() {
+  const m = 50 / COS;  // 50 true metres in Mercator metres
+  const [x0] = tx([0, 0]), [x1] = tx([m, 0]); const L = x1 - x0;
+  const X = 14 * dpr, Y = cv.height - 16 * dpr;
+  ctx.fillStyle = "rgba(11,15,19,.7)"; ctx.fillRect(X - 6 * dpr, Y - 20 * dpr, L + 12 * dpr, 28 * dpr);
+  ctx.fillStyle = "#fff"; ctx.fillRect(X, Y, L, 3 * dpr); ctx.font = `${12 * dpr}px ${css("--mono")}`; ctx.fillText("50 m", X, Y - 6 * dpr);
+}
+
+// ---------- hover
+let hover = null;
+function pick(mx, my) {
+  const p = [((mx - view.x) / view.k) / base(), ((my - view.y) / view.k) / base()], id = SID();
+  const bAt = () => B.find(b => inB(p, b)), cAt = () => CELLS.find(c => inside(p, c.ring));
+  if (id === "score" || id === "cluster" || id === "bal" || (id === "twogt" && gtSel === "bld")) { const b = bAt(); return b ? { b } : null }
+  if (id === "own") { const t = (gridSel === "ae" ? AE_T : GH_T).find(t => inside(p, t.ring)); return t ? { t } : null }
+  if (id === "ghsl") { const g = G.find(g => inside(p, g.ring)); const c = cAt(); const b = bAt(); return g || c || b ? { g, c, b } : null }
+  if (CELL_STEPS.includes(id) || id === "twogt") { const c = cAt(); const b = bAt(); return c || b ? { c, b } : null }
+  const b = bAt(); return b ? { b } : null;
+}
+function highlight() { ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 2.4 * dpr;
+  if (hover.t) { path(hover.t.ring); ctx.stroke(); return }
+  if (hover.c) { path(hover.c.ring); ctx.stroke() } else if (hover.b) hover.b.rings.forEach(r => { path(r); ctx.stroke() });
+  if (hover.g && SID() === "ghsl") { ctx.strokeStyle = css("--ghsl"); path(hover.g.ring); ctx.stroke() } }
+function spark(v) { const w = 230, h = 34, mn = Math.min(...v), mx = Math.max(...v);
+  const pts = v.map((y, i) => `${(i / 63 * w).toFixed(1)},${(h - 2 - (y - mn) / (mx - mn || 1) * (h - 4)).toFixed(1)}`).join(" ");
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${css("--accent")}" stroke-width="1.4"/></svg>` }
+function bText(b) {
+  if (!b) return "";
+  const id = SID();
+  const lab = b.status === "excluded" ? `Left out: ${b.reason}` : b.status === "res" ? `Residential (${b.label.replace("_", " ")})` : `Non-residential (${b.label})`;
+  let s = `<b>${b.name || "Building"}</b><br><span class="k">tag</span> <code>${b.cls || "none"}</code> · ${b.src}<br>${lab}<br><span class="k">footprint</span> ${fmt(b.area)} m²`;
+  if (id === "twogt" && b.status !== "excluded") s += b.noCentre ? `<br><b>No AlphaEarth cell centre inside:</b> no soft truth, so this footprint drops out of the building test`
+    : !b.soft ? `<br><span class="k">partly outside this window</span>; ${b.nStored} cell centres inside in the full data` : (b.edge ? `<br><span class="k">partly outside this window:</span> truth below uses the ${b.nIn} of ${b.nStored} cells loaded here` : "") + `<br><span class="k">building truth</span> res ${pct(b.soft.r)} · non-res ${pct(b.soft.n)} · empty ${pct(Math.max(0, 1 - b.soft.r - b.soft.n))}<br><span class="k">from</span> ${b.nIn} cell centre${b.nIn === 1 ? "" : "s"} inside`;
+  if ((id === "fix1" || id === "fix2" || id === "fix3") && b.status !== "excluded") { const q = BAL.window[b.id];
+    s += !q ? "" : q.b === -1 ? `<br><b>Fails step 1:</b> no AlphaEarth cell centre inside (${b.nStored} in the full data)` : id === "fix1" ? `<br><b>Passes step 1</b> · ${b.nStored} cell centres inside`
+      : q.b === 1 ? `<br><b>Kept</b> in the area-balanced set` : `<br><b>Cut in step 2</b>: NYC has more residential area, so houses are drawn at random (seed ${BAL.seed}) and this one fell past the target` }
+  else if (id === "bal" && b.status !== "excluded") { const q = BAL.window[b.id];
+    s += !q ? `<br><span class="k">not in the week 6 building table</span>` : q.s === "cut" ? `<br><b>Cut by 1:1 balancing</b> (random, seed ${BAL.seed})`
+      : q.s === "test" ? `<br><span class="k">kept:</span> balanced pool → training → frozen test` : `<br><span class="k">kept:</span> balanced pool${q.s === "train" ? " → training" : ""}<br><b>Not in the test set:</b> ${q.why}` }
+  if (id === "cluster" && b.status !== "excluded") s += `<br><span class="k">training cells from this footprint</span> ${fmt(b.kept, b.kept % 1 ? 1 : 0)}`;
+  if (id === "ghsl" && b.g_fr != null) s += `<br><span class="k">GHSL under footprint</span> res ${pct(b.g_fr)} · non-res ${pct(b.g_fn)} (${b.g_npix} px)`;
+  if (id === "score") {
+    if (!b.test) return s + `<br><span class="k">not in the frozen test set</span>`;
+    const t = b.test, e = errB(b, truth);
+    s += `<br><span class="k">truth</span> ${truth === "soft" ? `res ${pct(t.sr)} · non-res ${pct(t.sn)} (soft)` : (t.y ? "residential (hard)" : "non-residential (hard)")}` +
+         `<br><span class="k">model</span> res ${pct(clip(t.vr))} · non-res ${pct(clip(t.vn))} · error ${e.v.toFixed(3)}` +
+         `<br><span class="k">GHSL</span> res ${pct(t.gr)} · non-res ${pct(t.gn)} · error ${e.g.toFixed(3)}` +
+         (t.se != null ? `<br><span class="k">empty share</span> truth ${pct(t.se)} · week 11 model ${pct(clip(t.ee))} · GHSL ${pct(clip(1 - t.gr - t.gn))}` : "");
+  }
+  return s;
+}
+function cText(c) {
+  if (!c) return "";
+  const id = SID();
+  let s = `<b>10 m cell</b> <span class="k">${c.pid ? "id " + c.pid : "no tagged building"}</span><br>` +
+    `<span class="k">residential</span> ${pct(c.fr)} · <span class="k">non-res</span> ${pct(c.fn)} · <span class="k">empty</span> ${pct(emptyShare(c))}` +
+    `<div style="display:flex;height:8px;border-radius:3px;overflow:hidden;margin:4px 0;background:var(--empty)"><span style="width:${Math.min(100, c.fr * 100)}%;background:var(--res)"></span><span style="width:${Math.min(100, c.fn * 100)}%;background:var(--nres)"></span></div>` +
+    `<span class="k">cell type</span> ${c.stratum} · <span class="k">3-class label</span> ${decode3(c)}`;
+  if (id === "comp" && (c.stratum === "res" || c.stratum === "nres") && onUntagged(c)) s += `<br>Also sits on an untagged footprint, counted as empty`;
+  if (id === "sample" && (c.stratum === "res" || c.stratum === "nres")) s += pureRule === "any" ? `<br>${c.kept ? "Kept for training" : "Dropped by balancing"}`
+      : `<br>${isFull(c) ? "Fully covered: eligible" : "Partly covered: excluded under this rule"}`;
+  if (id === "ae" && c.ae) s += `<br><span class="k">64 AlphaEarth values</span>${spark(c.ae)}` + (c.p_res != null ? `<span class="k">held-out model</span> P(residential) ${c.p_res.toFixed(2)}` : "");
+  if (id === "ghsl" && c.g_fr != null) s += `<br><span class="k">GHSL at this centre</span> res ${pct(c.g_fr)} · non-res ${pct(c.g_fn)}`;
+  return s;
+}
+function showTip(e) {
+  const r = cv.getBoundingClientRect(); const mx = e.clientX - r.left, my = e.clientY - r.top;
+  hover = pick(mx, my); draw();
+  if (!hover) { tip.hidden = true; return }
+  const id = SID();
+  if (id === "own" && hover.t) { const t = hover.t, ae = gridSel === "ae";
+    const gr = ae ? t.fr : t.gt_r, gn = ae ? t.fn : t.gt_n, pr = ae ? t.ae_pr : t.fr, pn = ae ? t.ae_pn : t.fn;
+    tip.innerHTML = `<b>${ae ? "AlphaEarth" : "GHSL"} tile</b><br><span class="k">truth on this tile</span> res ${pct(gr)} · non-res ${pct(gn)} · empty ${pct(Math.max(0, 1 - gr - gn))}` +
+      `<br><span class="k">${ae ? "AlphaEarth" : "GHSL"} says</span> res ${pct(clip(pr))} · non-res ${pct(clip(pn))}` +
+      `<br><span class="k">class</span> truth ${t.tc} · predicted ${t.pc} · <b>${t.ok3 ? "right" : "wrong"}</b><br><span class="k">share error</span> ${tileErr(pr, pn, gr, gn).toFixed(3)}`;
+  } else {
+    let html = hover.c ? cText(hover.c) + (hover.b ? "<hr style='border:0;border-top:1px solid var(--line);margin:6px 0'>" + bText(hover.b) : "") : bText(hover.b);
+    if (id === "ghsl" && hover.g) html = `<b>GHSL cell</b><br><span class="k">built-up</span> ${hover.g.bu === 255 ? "no data" : hover.g.bu + "%"} · <span class="k">flag</span> ${hover.g.nres === 1 ? "non-residential" : "residential"}<hr style='border:0;border-top:1px solid var(--line);margin:6px 0'>` + html;
+    tip.innerHTML = html;
+  }
+  tip.hidden = false;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  tip.style.left = Math.max(4, Math.min(mx + 14, r.width - tw - 6)) + "px"; tip.style.top = Math.max(4, Math.min(my + 14, r.height - th - 6)) + "px";
+}
+
+// ---------- pan / zoom
+let drag = null;
+cv.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y }; cv.setPointerCapture(e.pointerId) });
+cv.addEventListener("pointermove", e => { if (drag) { view.x = drag.vx + (e.clientX - drag.x); view.y = drag.vy + (e.clientY - drag.y); tip.hidden = true; draw() } else showTip(e) });
+cv.addEventListener("pointerup", () => drag = null);
+cv.addEventListener("pointerleave", () => { hover = null; tip.hidden = true; draw() });
+cv.addEventListener("wheel", e => { e.preventDefault(); const r = cv.getBoundingClientRect(); const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const k = Math.min(12, Math.max(1, view.k * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); view.x = mx - (mx - view.x) * k / view.k; view.y = my - (my - view.y) * k / view.k; view.k = k; draw() }, { passive: false });
+document.getElementById("reset").onclick = () => { view = { k: 1, x: 0, y: 0 }; draw() };
+
+// ---------- UI
+const stepsEl = document.getElementById("steps"), bodyEl = document.getElementById("body");
+STEPS.forEach((s, i) => { const li = document.createElement("li"); li.innerHTML = `<button id="step-${i}"><span class="n">${i + 1}</span><span>${s.t}</span></button>`;
+  li.firstChild.onclick = () => go(i); stepsEl.appendChild(li) });
+const CTL = {
+  rule: () => seg("rule", [["any", "Any coverage"], ["full", "Fully covered"], ["three", "Three classes"]], pureRule),
+  grid: () => seg("grid", [["ae", "AlphaEarth tiles"], ["ghsl", "GHSL tiles"]], gridSel),
+  own: () => seg("grid", [["ae", "AlphaEarth tiles"], ["ghsl", "GHSL tiles"]], gridSel) + " " + seg("metric", [["right", "Right / wrong"], ["bal", "Balanced 1:1"], ["err", "Share error"]], ownMetric),
+  view: () => seg("view", [["two", "Two shares"], ["three", "Three classes (with empty)"]], view3),
+  centres: () => seg("centres", [["off", "Fair: own grids"], ["on", "Week 4: read at AE centres"]], showCentres ? "on" : "off"),
+  truth: () => seg("truth", [["soft", "Soft truth"], ["hard", "Hard truth (no grid)"]], truth),
+  comp: () => seg("comp", [["window", "This window"], ["all", "All ten boxes"]], compSel),
+  fixreg: () => `<div class="chipset" role="group" aria-label="Study box">${FR.map(r => `<button data-ctl="fixreg" data-v="${r.name}" aria-pressed="${r.name === fixReg}">${short(r.name)}</button>`).join("")}</div>`,
+  bal: () => seg("bal", [["labelled", "1. Labelled"], ["pool", "2. 1:1 count"], ["train", "3. Training"], ["test", "4. Test"]], balSel),
+  gt: () => seg("gt", [["cell", "A. Cell truth"], ["bld", "B. Building truth"]], gtSel),
+  region: () => `<div class="chipset" role="group" aria-label="Study box">${RG.map(r => `<button data-ctl="region" data-v="${r.name}" aria-pressed="${r.name === regSel}">${short(r.name)}</button>`).join("")}</div>`,
+};
+function seg(name, opts, cur) { return `<div class="seg" role="group" aria-label="${name}" style="margin:2px 0 10px">${opts.map(([v, l]) =>
+  `<button data-ctl="${name}" data-v="${v}" id="ctl-${name}-${v}" aria-pressed="${v === cur}">${l}</button>`).join("")}</div>` }
+function go(i, keepView) {
+  step = Math.max(0, Math.min(STEPS.length - 1, i)); const s = STEPS[step]; hover = null; tip.hidden = true;
+  document.querySelectorAll("ol.steps button").forEach((b, j) => b.setAttribute("aria-current", j === step ? "step" : "false"));
+  const leg = val(s.leg) || [];
+  const stats = val(s.s) || [];
+  bodyEl.innerHTML = `<h2>${step + 1}. ${s.h}</h2>${s.ctl ? CTL[s.ctl]() : ""}${val(s.p).map(t => `<p>${t}</p>`).join("")}
+    ${stats.length ? `<div class="stats">${stats.map(([v, l]) => `<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("")}</div>` : ""}
+    ${s.extra ? s.extra() : ""}
+    <div class="legend">${leg.map(([c, l, b]) => `<span style="--c:${c};--b:${b || "transparent"}">${l}</span>`).join("")}</div>
+    <p class="src" style="margin-top:10px">Source: ${val(s.src)}</p>`;
+  bodyEl.querySelectorAll("[data-ctl]").forEach(btn => btn.onclick = () => {
+    const n = btn.dataset.ctl, v = btn.dataset.v;
+    if (n === "rule") pureRule = v; if (n === "view") view3 = v; if (n === "grid") gridSel = v; if (n === "centres") showCentres = v === "on"; if (n === "truth") truth = v;
+    if (n === "metric") ownMetric = v; if (n === "comp") compSel = v; if (n === "gt") gtSel = v; if (n === "region") regSel = v; if (n === "bal") balSel = v; if (n === "w16m") w16m = v; if (n === "fixreg") fixReg = v;
+    go(step, true) });
+  document.getElementById("prev").disabled = step === 0;
+  document.getElementById("next").textContent = step === STEPS.length - 1 ? "Back to start" : "Next step";
+  if (!keepView && s.id === "ghsl" && view.k < 1.4) { view = { k: 2.4, x: -size * 0.7, y: -size * 0.7 } }
+  if (!keepView && after("own")) { view = { k: 1, x: 0, y: 0 } }
+  draw();
+}
+document.getElementById("prev").onclick = () => go(step - 1);
+document.getElementById("next").onclick = () => go(step === STEPS.length - 1 ? 0 : step + 1);
+document.addEventListener("keydown", e => { if (e.target.closest && e.target.closest("input")) return; if (e.key === "ArrowRight") go(step + 1); if (e.key === "ArrowLeft") go(step - 1) });
+[["esri", "img-esri"], ["s2", "img-s2"], ["none", "img-none"]].forEach(([k, id]) => document.getElementById(id).onclick = () => {
+  bg = k; ["img-esri", "img-s2", "img-none"].forEach(x => document.getElementById(x).setAttribute("aria-pressed", x === id)); draw(); attrib() });
+document.getElementById("dim").oninput = draw;
+function attrib() { document.getElementById("attrib").textContent = bg === "esri" ? "Imagery: Esri World Imagery (Esri, Maxar, Earthstar Geographics)" : bg === "s2" ? "Imagery: Sentinel-2 L2A, summer 2018 (Copernicus), 10 m pixels" : "" }
+document.getElementById("scaleNote").textContent = "Scroll to zoom, drag to pan, hover for details. Arrow keys step through.";
+Object.values(img).forEach(im => im.onload = draw);
+window.addEventListener("resize", fit);
+try { matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { hatch = null; draw() }) } catch (e) {}
+attrib(); go(0); fit();
+</script>

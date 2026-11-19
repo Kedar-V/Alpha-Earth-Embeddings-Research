@@ -1,0 +1,9 @@
+features,n_features,mae_mean,mae_res,mae_nres,coverage,n_scored
+AE only (64),64,0.2305,0.2243,0.2368,1.0,71497
+Footprint shape only (3),3,0.2276,0.2272,0.2281,1.0,71497
+S2 imagery only (10),10,0.2551,0.2304,0.2798,1.0,71497
+Fuzzy NRES score only (1),1,0.284,0.2682,0.2999,1.0,71497
+AE + footprint shape,67,0.2007,0.2044,0.1969,1.0,71497
+AE + S2 imagery,74,0.2214,0.2124,0.2304,1.0,71497
+AE + all 16 S2 features (week 9),80,0.1934,0.195,0.1919,1.0,71497
+GHS-BUILT-S (baseline),0,0.2111,,,1.0,71497
